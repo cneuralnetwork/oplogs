@@ -22,7 +22,11 @@ describe('Shell', () => {
 
     expect(screen.getByRole('button', { name: 'oplogs home' })).toHaveTextContent('oplogs')
     expect(screen.getByRole('button', { name: 'Runs' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveAttribute('aria-current')
+    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument()
+    const docsLink = screen.getByRole('link', { name: 'Docs (opens in a new tab)' })
+    expect(docsLink).toHaveAttribute('href', 'https://cneuralnetwork.github.io/oplogs-docs/')
+    expect(docsLink).toHaveAttribute('target', '_blank')
+    expect(docsLink).toHaveAttribute('rel', 'noopener noreferrer')
 
     fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }))
     expect(navigate).toHaveBeenCalledWith('/artifacts')

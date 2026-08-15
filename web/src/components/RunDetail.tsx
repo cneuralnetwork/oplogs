@@ -4,38 +4,12 @@ import { api } from '../api'
 import { formatDateTime, formatTime, humanBytes } from '../format'
 import type { Artifact, History, RunEvent, RunRecord, Trace } from '../types'
 import { BackIcon, ExternalIcon } from './Icons'
-import { LineChart } from './LineChart'
+import { isSystemMetric, metricPriority } from './metric-utils'
+import { MetricGrid, RunMetricsDashboard } from './RunMetrics'
 
 interface RunDetailProps {
   runId: string
   navigate: (path: string) => void
-}
-
-const numberFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 })
-
-function formatMetric(value: number) {
-  const magnitude = Math.abs(value)
-  if (magnitude !== 0 && (magnitude < 0.0001 || magnitude >= 1_000_000)) {
-    return value.toExponential(3)
-  }
-  return numberFormat.format(value)
-}
-
-function metricPriority(key: string) {
-  const normalized = key.toLowerCase()
-  if (/^(validation|val)[/. _-].*(accuracy|acc)$/.test(normalized)) return 0
-  if (/^(validation|val)[/. _-].*loss$/.test(normalized)) return 1
-  if (/^train(ing)?[/. _-].*(accuracy|acc)$/.test(normalized)) return 2
-  if (/^train(ing)?[/. _-].*loss$/.test(normalized)) return 3
-  if (normalized.includes('accuracy') || normalized.endsWith('/acc')) return 10
-  if (normalized.includes('loss')) return 11
-  if (normalized.startsWith('gradients.')) return 40
-  if (normalized.includes('.lr.') || normalized.endsWith('/lr')) return 41
-  return 20
-}
-
-function compareMetrics([left]: [string, unknown], [right]: [string, unknown]) {
-  return metricPriority(left) - metricPriority(right) || left.localeCompare(right)
 }
 
 function formatState(state: string) {
@@ -59,15 +33,20 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [traces, setTraces] = useState<Trace[]>([])
   const [error, setError] = useState('')
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [refreshRequest, setRefreshRequest] = useState(0)
+  const [refreshing, setRefreshing] = useState(true)
+  const [lastSynced, setLastSynced] = useState<Date | null>(null)
 
   useEffect(() => {
     let active = true
     let timer = 0
     const load = async () => {
+      if (active) setRefreshing(true)
       try {
         const [nextRun, nextHistory, recentEvents, logEvents, sourceEvents, sampleEvents, nextArtifacts, nextTraces] = await Promise.all([
           api.run(runId),
-          api.history(runId),
+          api.history(runId, 20000),
           api.events(runId, undefined, 60, true),
           api.events(runId, 'log', 2000),
           api.events(runId, 'source', 1),
@@ -84,24 +63,25 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
           setArtifacts(nextArtifacts)
           setTraces(nextTraces)
           setError('')
-          if (nextRun.state === 'running') timer = window.setTimeout(load, 2000)
+          setLastSynced(new Date())
         }
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : 'Unable to load this run.')
+      } finally {
+        if (active) {
+          setRefreshing(false)
+          if (autoRefresh) timer = window.setTimeout(load, 2000)
+        }
       }
     }
     void load()
     return () => { active = false; window.clearTimeout(timer) }
-  }, [runId])
+  }, [autoRefresh, refreshRequest, runId])
 
-  const metricEntries = useMemo(
-    () => Object.entries(history)
-      .filter(([key]) => !key.startsWith('system.') && !key.startsWith('process.') && !key.startsWith('gpu.'))
-      .sort(compareMetrics),
-    [history],
-  )
   const systemEntries = useMemo(
-    () => Object.entries(history).filter(([key]) => key.startsWith('system.') || key.startsWith('process.') || key.startsWith('gpu.')),
+    () => Object.entries(history)
+      .filter(([key]) => isSystemMetric(key))
+      .sort(([left], [right]) => metricPriority(left) - metricPriority(right) || left.localeCompare(right)),
     [history],
   )
   const logs = events.filter((event) => event.kind === 'log')
@@ -110,11 +90,6 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
 
   if (error) return <div className="load-error"><h1>Run unavailable</h1><p>{error}</p><button onClick={() => navigate('/')}>Back to runs</button></div>
   if (!run) return <div className="page-loading">Loading run…</div>
-
-  const summary = Object.entries(run.summary)
-    .filter(([, value]) => typeof value === 'number')
-    .sort(compareMetrics)
-    .slice(0, 4)
 
   return (
     <div className="run-page">
@@ -127,20 +102,21 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
         <div className="run-meta"><span>{run.id}</span><span>Started {formatDateTime(run.created_at)}</span><span>{run.last_sequence + 1} events</span></div>
       </header>
 
-      {summary.length > 0 && <section className="metric-strip" aria-label="Latest metrics">
-        {summary.map(([key, value], index) => <article key={key} data-tone={['indigo', 'mint', 'coral', 'amber'][index]}><div><span>{key}</span><small>Latest recorded value</small></div><strong>{formatMetric(Number(value))}</strong></article>)}
-      </section>}
-
       <Tabs.Root className="run-tabs" defaultValue="overview">
         <Tabs.List aria-label="Run details">
           {runTabs.map((tab) => <Tabs.Trigger key={tab.value} value={tab.value}>{tab.label}</Tabs.Trigger>)}
         </Tabs.List>
         <Tabs.Content value="overview">
-          <section className="run-overview-grid">
-            <div className="data-card chart-panel metrics-card">
-              <div className="card-heading"><div><h2>Metric history</h2><p>Drag across the plot to inspect a range.</p></div><span>{metricEntries.length} series</span></div>
-              <LineChart series={metricEntries.slice(0, 5).map(([label, points]) => ({ label, points }))} height={390} />
-            </div>
+          <RunMetricsDashboard
+            run={run}
+            history={history}
+            autoRefresh={autoRefresh}
+            refreshing={refreshing}
+            lastSynced={lastSynced}
+            onAutoRefreshChange={setAutoRefresh}
+            onRefresh={() => setRefreshRequest((value) => value + 1)}
+          />
+          <section className="overview-detail-grid">
             <div className="data-card configuration-card"><div className="card-heading"><div><h2>Configuration</h2><p>The exact inputs captured at start.</p></div></div><dl className="key-values">{Object.entries(run.config).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}</dl></div>
             <div className="data-card activity-card"><div className="card-heading"><div><h2>Recent activity</h2><p>Newest journal records first.</p></div></div><ol className="activity-list">{events.slice(0, 8).map((event) => <li key={event.sequence}><span>{event.kind}</span><time>{formatTime(event.timestamp)}</time></li>)}</ol></div>
           </section>
@@ -155,7 +131,8 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
           <section className="console" aria-label="Captured console output">{logs.length ? logs.map((event) => <div key={event.sequence}><time>{formatTime(event.timestamp)}</time><span data-stream={String(event.payload.stream)}>{String(event.payload.stream)}</span><code>{String(event.payload.line)}</code></div>) : <p>No console output captured.</p>}</section>
         </Tabs.Content>
         <Tabs.Content value="system">
-          <section className="data-card chart-panel"><div className="card-heading"><div><h2>System telemetry</h2><p>Process, host, and accelerator readings.</p></div></div><LineChart series={systemEntries.slice(0, 6).map(([label, points]) => ({ label, points }))} height={380} /></section>
+          <header className="telemetry-heading"><h2>System telemetry</h2><p>Each process, host, and accelerator reading has its own scale.</p></header>
+          <MetricGrid entries={systemEntries} historyWindow="all" smoothing={0.15} emptyMessage="No system telemetry has arrived yet." />
         </Tabs.Content>
         <Tabs.Content value="traces">
           <section className="trace-list">{traces.map((trace) => <article key={trace.id}><div><strong>{trace.name}</strong><span className="trace-status" data-state={trace.status}>{formatState(trace.status)}</span></div><p>{trace.duration_ms ? `${trace.duration_ms.toFixed(1)} ms` : 'Running'}</p>{trace.error && <pre>{trace.error}</pre>}</article>)}</section>

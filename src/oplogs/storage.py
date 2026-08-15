@@ -604,6 +604,35 @@ class Storage:
             )
         return result
 
+    def metric_rows(self, run_id: str) -> list[dict[str, Any]]:
+        """Return lossless metric events as one JSON-ready row per sequence."""
+        query = """
+        SELECT sequence, metric_key, value, step, timestamp, rank
+        FROM metrics
+        WHERE run_id=?
+        ORDER BY sequence ASC, metric_key ASC
+        """
+        with self.connection() as connection:
+            records = connection.execute(query, (run_id,)).fetchall()
+        rows: list[dict[str, Any]] = []
+        current_sequence: int | None = None
+        current: dict[str, Any] = {}
+        for record in records:
+            if record["sequence"] != current_sequence:
+                if current:
+                    rows.append(current)
+                current_sequence = record["sequence"]
+                current = {
+                    "sequence": record["sequence"],
+                    "step": record["step"],
+                    "timestamp": record["timestamp"],
+                    "rank": record["rank"],
+                }
+            current[record["metric_key"]] = record["value"]
+        if current:
+            rows.append(current)
+        return rows
+
     def events(
         self, run_id: str, kind: str | list[str] | None = None, limit: int = 1000
     ) -> list[dict[str, Any]]:

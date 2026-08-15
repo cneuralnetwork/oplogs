@@ -184,6 +184,22 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
     ):
         return store.history(run_id, keys.split(",") if keys else None, limit)
 
+    @app.get("/api/runs/{run_id}/history.jsonl")
+    async def history_jsonl(run_id: str):
+        if not store.get_run(run_id):
+            raise HTTPException(status_code=404, detail="run not found")
+        rows = store.metric_rows(run_id)
+
+        async def generate():
+            for row in rows:
+                yield json.dumps(row, separators=(",", ":")) + "\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": 'attachment; filename="metrics.jsonl"'},
+        )
+
     @app.get("/api/runs/{run_id}/events")
     async def events(
         run_id: str,

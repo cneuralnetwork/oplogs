@@ -13,5 +13,7 @@ web/node_modules/
 docs-site/_site/
 web/dist/
 .oplogs/
+data/
+oplogs-*-output/
 *.log
 .DS_Store

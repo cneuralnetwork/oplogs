@@ -1,15 +1,15 @@
 import { useEffect, useRef } from 'react'
 import type { ComponentType, ReactNode, SVGProps } from 'react'
-import { oplogsMarkUrl } from '../brand'
+import { oplogsDocsUrl, oplogsMarkUrl } from '../brand'
 import { useTheme } from '../theme-context'
 import {
   ArtifactIcon,
+  DocsIcon,
   ProjectIcon,
   RegistryIcon,
   ReportIcon,
   RunsIcon,
   SearchIcon,
-  SettingsIcon,
   SweepIcon,
   TraceIcon,
 } from './Icons'
@@ -82,10 +82,10 @@ export function Shell({ currentPath, navigate, children, search = '', onSearch, 
           })}
         </nav>
         <div className="sidebar-spacer" />
-        <button className="nav-item" data-active={currentPath === '/settings'} onClick={() => navigate('/settings')} aria-label="Settings" aria-current={currentPath === '/settings' ? 'page' : undefined}>
-          <SettingsIcon />
-          <span>Settings</span>
-        </button>
+        <a className="nav-item" href={oplogsDocsUrl} target="_blank" rel="noopener noreferrer" aria-label="Docs (opens in a new tab)">
+          <DocsIcon />
+          <span>Docs</span>
+        </a>
         {footer}
       </aside>
       <header className="topbar">

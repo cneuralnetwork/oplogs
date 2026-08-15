@@ -32,6 +32,16 @@ async def test_full_ingestion_and_query_flow(store: Storage) -> None:
         assert response.json() == {"accepted": 1}
         assert (await client.get("/api/runs/api-run/history")).json()["loss"][0]["value"] == 0.25
         assert (await client.get("/api/runs")).json()[0]["summary"]["loss"] == 0.25
+        metrics_export = await client.get("/api/runs/api-run/history.jsonl")
+        assert metrics_export.headers["content-type"].startswith("application/x-ndjson")
+        assert metrics_export.headers["content-disposition"] == 'attachment; filename="metrics.jsonl"'
+        assert metrics_export.json() == {
+            "sequence": 0,
+            "step": 2.0,
+            "timestamp": event.timestamp,
+            "rank": None,
+            "loss": 0.25,
+        }
 
         finished = Event(
             "api-run", 1, "run.finished", {"state": "finished"}

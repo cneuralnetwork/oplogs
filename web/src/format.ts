@@ -1,4 +1,4 @@
-const byteUnits = ['b', 'kb', 'mb', 'gb', 'tb']
+const byteUnits = ['B', 'KB', 'MB', 'GB', 'TB']
 
 export function humanBytes(bytes: number) {
   let value = bytes
@@ -11,9 +11,9 @@ export function humanBytes(bytes: number) {
 }
 
 export function formatDateTime(value: string) {
-  return new Date(value).toLocaleString().toLowerCase()
+  return new Date(value).toLocaleString()
 }
 
 export function formatTime(value: string) {
-  return new Date(value).toLocaleTimeString().toLowerCase()
+  return new Date(value).toLocaleTimeString()
 }

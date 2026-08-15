@@ -30,7 +30,7 @@ describe('RunsTable', () => {
     expect(screen.getByText('tiny-cnn')).toBeVisible()
     expect(screen.getByText('run-123')).toBeVisible()
     expect(screen.getByText('validation/accuracy 0.98')).toBeVisible()
-    expect(screen.getByRole('columnheader', { name: 'latest metric' })).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: 'Latest metric' })).toBeVisible()
 
     const row = screen.getByText('tiny-cnn').closest('tr')
     expect(row).not.toBeNull()

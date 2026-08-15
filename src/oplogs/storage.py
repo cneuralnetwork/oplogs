@@ -257,6 +257,8 @@ class Storage:
             with self.connection() as connection:
                 for event in accepted:
                     self._index_event(connection, event)
+            for event in accepted:
+                self._sync_terminal_manifest(event)
         return len(accepted)
 
     def _index_event(self, connection: sqlite3.Connection, event: Event) -> None:
@@ -296,10 +298,57 @@ class Storage:
         summary = self._summary_update(connection, event)
         self._index_trace(connection, event)
         self._index_artifact_records(connection, event)
+        self._update_run_from_event(connection, event, summary)
+
+    @staticmethod
+    def _terminal_state(event: Event) -> str | None:
+        if event.kind != "run.finished":
+            return None
+        state = event.payload.get("state", "finished")
+        return state if isinstance(state, str) and state else "finished"
+
+    def _update_run_from_event(
+        self, connection: sqlite3.Connection, event: Event, summary: dict[str, Any]
+    ) -> None:
+        terminal_state = self._terminal_state(event)
+        if terminal_state:
+            connection.execute(
+                "UPDATE runs SET state=?, updated_at=?, finished_at=?, "
+                "last_sequence=MAX(last_sequence, ?), summary_json=? WHERE id=?",
+                (
+                    terminal_state,
+                    event.timestamp,
+                    event.timestamp,
+                    event.sequence,
+                    json.dumps(summary),
+                    event.run_id,
+                ),
+            )
+        else:
+            connection.execute(
+                "UPDATE runs SET updated_at=?, last_sequence=MAX(last_sequence, ?), "
+                "summary_json=? WHERE id=?",
+                (event.timestamp, event.sequence, json.dumps(summary), event.run_id),
+            )
         connection.execute(
-            "UPDATE runs SET updated_at=?, last_sequence=MAX(last_sequence, ?), summary_json=? WHERE id=?",
-            (event.timestamp, event.sequence, json.dumps(summary), event.run_id),
+            "UPDATE projects SET updated_at=? WHERE name=(SELECT project FROM runs WHERE id=?)",
+            (event.timestamp, event.run_id),
         )
+
+    def _sync_terminal_manifest(self, event: Event) -> None:
+        terminal_state = self._terminal_state(event)
+        if not terminal_state:
+            return
+        manifest_path = self.runs_dir / event.run_id / "manifest.json"
+        if not manifest_path.exists():
+            return
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.update(
+            state=terminal_state,
+            updated_at=event.timestamp,
+            finished_at=event.timestamp,
+        )
+        self._write_manifest(event.run_id, manifest)
 
     @staticmethod
     def _index_trace(connection: sqlite3.Connection, event: Event) -> None:
@@ -369,16 +418,22 @@ class Storage:
 
     def finish_run(self, run_id: str, state: str = "finished") -> None:
         now = utc_now()
-        with self.connection() as connection:
-            connection.execute(
-                "UPDATE runs SET state=?, updated_at=?, finished_at=? WHERE id=?",
-                (state, now, now, run_id),
-            )
-        manifest_path = self.runs_dir / run_id / "manifest.json"
-        if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest.update(state=state, updated_at=now, finished_at=now)
-            self._write_manifest(run_id, manifest)
+        with self._lock:
+            with self.connection() as connection:
+                connection.execute(
+                    "UPDATE runs SET state=?, updated_at=?, finished_at=? WHERE id=?",
+                    (state, now, now, run_id),
+                )
+                connection.execute(
+                    "UPDATE projects SET updated_at=? "
+                    "WHERE name=(SELECT project FROM runs WHERE id=?)",
+                    (now, run_id),
+                )
+            manifest_path = self.runs_dir / run_id / "manifest.json"
+            if manifest_path.exists():
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest.update(state=state, updated_at=now, finished_at=now)
+                self._write_manifest(run_id, manifest)
 
     def add_artifact(self, run_id: str, descriptor: dict[str, Any]) -> dict[str, Any]:
         source = Path(descriptor["path"]).expanduser().resolve()
@@ -859,10 +914,8 @@ class Storage:
                             ),
                         )
             summary = self._summary_update(connection, event)
-            connection.execute(
-                "UPDATE runs SET updated_at=?, last_sequence=MAX(last_sequence, ?), summary_json=? WHERE id=?",
-                (event.timestamp, event.sequence, json.dumps(summary), event.run_id),
-            )
+            self._update_run_from_event(connection, event, summary)
+        self._sync_terminal_manifest(event)
 
     @staticmethod
     def _run_row(row: sqlite3.Row) -> dict[str, Any]:

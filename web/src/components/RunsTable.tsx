@@ -18,7 +18,11 @@ function formatDuration(run: RunRecord) {
 
 function primaryMetric(run: RunRecord) {
   const candidate = Object.entries(run.summary).find(([, value]) => typeof value === 'number')
-  return candidate ? `${candidate[0]} ${Number(candidate[1]).toLocaleString(undefined, { maximumFractionDigits: 4 })}` : 'waiting for metrics'
+  return candidate ? `${candidate[0]} ${Number(candidate[1]).toLocaleString(undefined, { maximumFractionDigits: 4 })}` : 'Waiting for metrics'
+}
+
+function formatState(state: string) {
+  return state.charAt(0).toUpperCase() + state.slice(1)
 }
 
 export function RunsTable({ runs, onSelect }: RunsTableProps) {
@@ -27,19 +31,19 @@ export function RunsTable({ runs, onSelect }: RunsTableProps) {
       <table className="data-table">
         <thead>
           <tr>
-            <th scope="col">state</th>
-            <th scope="col">run</th>
-            <th scope="col">project</th>
-            <th scope="col">updated</th>
-            <th scope="col">duration</th>
-            <th scope="col">latest metric</th>
-            <th aria-label="open" />
+            <th scope="col">State</th>
+            <th scope="col">Run</th>
+            <th scope="col">Project</th>
+            <th scope="col">Updated</th>
+            <th scope="col">Duration</th>
+            <th scope="col">Latest metric</th>
+            <th aria-label="Open" />
           </tr>
         </thead>
         <tbody>
           {runs.map((run) => (
             <tr key={run.id} onClick={() => onSelect(run)} tabIndex={0} onKeyDown={(event) => event.key === 'Enter' && onSelect(run)}>
-              <td><span className="run-state" data-state={run.state}>{run.state}</span></td>
+              <td><span className="run-state" data-state={run.state}>{formatState(run.state)}</span></td>
               <td><strong>{run.name}</strong><small>{run.id}</small></td>
               <td>{run.project}</td>
               <td>{formatDateTime(run.updated_at)}</td>

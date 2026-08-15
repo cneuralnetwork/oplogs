@@ -10,7 +10,7 @@
 
   function setTheme(theme) {
     root.dataset.theme = theme;
-    if (themeButton) themeButton.textContent = theme === "dark" ? "use light" : "use dark";
+    if (themeButton) themeButton.textContent = theme === "dark" ? "Light mode" : "Dark mode";
     try {
       localStorage.setItem("oplogs-docs-theme", theme);
     } catch (_error) {
@@ -19,7 +19,7 @@
   }
 
   if (themeButton) {
-    themeButton.textContent = root.dataset.theme === "dark" ? "use light" : "use dark";
+    themeButton.textContent = root.dataset.theme === "dark" ? "Light mode" : "Dark mode";
     themeButton.addEventListener("click", () => {
       setTheme(root.dataset.theme === "dark" ? "light" : "dark");
     });
@@ -103,7 +103,7 @@
     } else {
       const empty = document.createElement("p");
       empty.className = "search-empty";
-      empty.textContent = "no matching page";
+      empty.textContent = "No matching page";
       searchResults.append(empty);
     }
     searchResults.hidden = false;
@@ -121,7 +121,7 @@
         if (searchInput.value.trim()) renderSearch(searchInput.value);
       })
       .catch(() => {
-        searchInput.placeholder = "search unavailable";
+        searchInput.placeholder = "Search unavailable";
       });
 
     searchInput.addEventListener("input", () => renderSearch(searchInput.value));
@@ -143,54 +143,6 @@
       }, 1200);
     });
   });
-
-  document.querySelector("[data-copy-link]")?.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    await navigator.clipboard.writeText(window.location.href);
-    button.textContent = "link copied";
-    window.setTimeout(() => {
-      button.textContent = "copy page link";
-    }, 1200);
-  });
-
-  const journalExamples = {
-    metric: {
-      code: 'run.log({"train/loss": 0.184}, step=400)',
-      status: "metric · indexed for charts",
-    },
-    media: {
-      code: 'run.log({"samples": oplogs.Image("grid.png")}, step=400)',
-      status: "media · rendered with its producing step",
-    },
-    artifact: {
-      code: 'run.log({"model": oplogs.Artifact("model.pt", aliases=["latest"])})',
-      status: "artifact · sha-256 addressed and aliased",
-    },
-  };
-
-  const journalLab = document.querySelector("[data-journal-lab]");
-  journalLab?.querySelectorAll("[data-journal-kind]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const kind = button.dataset.journalKind;
-      const selected = journalExamples[kind];
-      if (!selected) return;
-      journalLab.querySelectorAll("[data-journal-kind]").forEach((candidate) => {
-        candidate.setAttribute("aria-pressed", String(candidate === button));
-      });
-      journalLab.querySelector("[data-journal-code]").textContent = selected.code;
-      journalLab.querySelector("[data-journal-status]").textContent = selected.status;
-    });
-  });
-
-  const banner = document.querySelector("[data-banner]");
-  if (banner && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    banner.addEventListener("pointermove", (event) => {
-      const bounds = banner.getBoundingClientRect();
-      const offset = ((event.clientX - bounds.left) / bounds.width - 0.5) * -1.2;
-      banner.style.setProperty("--banner-shift", `${offset}%`);
-    });
-    banner.addEventListener("pointerleave", () => banner.style.setProperty("--banner-shift", "0%"));
-  }
 
   const tocLinks = [...document.querySelectorAll(".toc li a")];
   if (tocLinks.length && "IntersectionObserver" in window) {

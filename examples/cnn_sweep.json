@@ -1,0 +1,15 @@
+{
+  "project": "cnn-demo",
+  "name": "tiny-cnn-learning-rate",
+  "method": "grid",
+  "count": 2,
+  "concurrency": 1,
+  "parameters": {
+    "learning_rate": {
+      "values": [0.004, 0.012]
+    },
+    "batch_size": {
+      "value": 64
+    }
+  }
+}

@@ -20,13 +20,29 @@ async function filesBelow(directory) {
 const files = await filesBelow(siteRoot);
 const htmlFiles = files.filter((file) => file.endsWith(".html") && !file.endsWith("404.html"));
 const index = JSON.parse(await readFile(path.join(siteRoot, "search-index.json"), "utf8"));
-const expectedPageCount = 15 + 1 + apiSymbols.length + cliCommands.length;
+const stylesheet = await readFile(path.join(siteRoot, "styles.css"), "utf8");
+const expectedPageCount = 14 + apiSymbols.length + cliCommands.length;
 
 if (htmlFiles.length !== expectedPageCount) {
   failures.push(`expected ${expectedPageCount} html pages, found ${htmlFiles.length}`);
 }
 if (index.length !== expectedPageCount) {
   failures.push(`expected ${expectedPageCount} search records, found ${index.length}`);
+}
+
+for (const match of stylesheet.matchAll(/url\(["']?([^"')]+)["']?\)/g)) {
+  const value = match[1].split("?")[0];
+  if (/^(?:data:|https?:)/.test(value)) continue;
+  const target = path.resolve(siteRoot, value);
+  if (!target.startsWith(`${siteRoot}${path.sep}`)) {
+    failures.push(`styles.css: asset escapes site root ${value}`);
+    continue;
+  }
+  try {
+    await stat(target);
+  } catch {
+    failures.push(`styles.css: missing asset ${value}`);
+  }
 }
 
 function targetPath(rawUrl) {
@@ -80,13 +96,19 @@ for (const file of htmlFiles) {
 
 const home = await readFile(path.join(siteRoot, "index.html"), "utf8");
 for (const required of [
-  "oplogs-journal-field.webp",
-  "data-journal-kind=\"metric\"",
   "data-search",
   "data-theme-toggle",
   "data-menu-toggle",
+  'href="https://github.com/cneuralnetwork/oplogs">GitHub</a>',
 ]) {
   if (!home.includes(required)) failures.push(`overview: missing ${required}`);
+}
+
+const renderedHtml = await Promise.all(htmlFiles.map((file) => readFile(file, "utf8")));
+for (const removed of ["data-copy-link", "data-journal-lab", "reference-count", "/reference/sdk/", "/benchmark/"]) {
+  if (renderedHtml.some((html) => html.includes(removed))) {
+    failures.push(`documentation retained removed element ${removed}`);
+  }
 }
 
 const apiIndex = await readFile(path.join(siteRoot, "reference", "api", "index.html"), "utf8");
@@ -95,10 +117,26 @@ if (apiEntries !== apiSymbols.length) {
   failures.push(`api directory: expected ${apiSymbols.length} entries, found ${apiEntries}`);
 }
 
+for (const item of apiSymbols) {
+  const page = await readFile(path.join(siteRoot, "reference", "api", item.slug, "index.html"), "utf8");
+  const expected = `https://github.com/cneuralnetwork/oplogs/blob/main/${item.source}`;
+  if (!page.includes(`href="${expected}">Source on GitHub</a>`)) {
+    failures.push(`api ${item.name}: missing GitHub source link ${expected}`);
+  }
+}
+
 const cliIndex = await readFile(path.join(siteRoot, "reference", "cli", "index.html"), "utf8");
 const cliEntries = [...cliIndex.matchAll(/class="reference-entry"/g)].length;
 if (cliEntries !== cliCommands.length) {
   failures.push(`cli directory: expected ${cliCommands.length} entries, found ${cliEntries}`);
+}
+
+for (const item of cliCommands) {
+  const page = await readFile(path.join(siteRoot, "reference", "cli", item.slug, "index.html"), "utf8");
+  const expected = `https://github.com/cneuralnetwork/oplogs/blob/main/${item.source}`;
+  if (!page.includes(`href="${expected}">Source on GitHub</a>`)) {
+    failures.push(`cli ${item.name}: missing GitHub source link ${expected}`);
+  }
 }
 
 const packageSource = await readFile(path.resolve("src/oplogs/__init__.py"), "utf8");

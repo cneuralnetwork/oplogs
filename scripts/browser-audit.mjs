@@ -74,6 +74,9 @@ do {
     clientWidth: document.documentElement.clientWidth,
     scrollHeight: document.documentElement.scrollHeight,
     scrollY,
+    main: (() => { const node = document.querySelector('.main-content'); const box = node?.getBoundingClientRect(); return node && box ? { top: box.top, height: box.height, scrollTop: node.scrollTop, scrollHeight: node.scrollHeight } : null })(),
+    topbar: (() => { const node = document.querySelector('.topbar'); const box = node?.getBoundingClientRect(); return node && box ? { top: box.top, left: box.left, width: box.width, height: box.height } : null })(),
+    search: (() => { const node = document.querySelector('.command-search'); const box = node?.getBoundingClientRect(); return node && box ? { top: box.top, left: box.left, width: box.width, height: box.height, display: getComputedStyle(node).display, visibility: getComputedStyle(node).visibility } : null })(),
     tabs: [...document.querySelectorAll('[role="tab"]')].map((node) => ({name: node.textContent, selected: node.getAttribute('aria-selected')})),
     navigation: [...document.querySelectorAll('.sidebar nav .nav-item')].map((node) => { const box = node.getBoundingClientRect(); return {name: node.textContent.trim(), left: box.left, right: box.right, width: box.width}; }),
   })`)

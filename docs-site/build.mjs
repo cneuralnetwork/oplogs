@@ -7,6 +7,7 @@ import { apiSymbols, cliCommands } from "./reference-data.mjs";
 
 const sourceRoot = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(sourceRoot, "..");
+const fontRoot = path.join(repositoryRoot, "web", "src", "assets", "fonts");
 const requestedOutput = process.argv[2] || path.join(sourceRoot, "_site");
 const outputRoot = path.resolve(requestedOutput);
 const basePath = normalizeBase(process.env.OPLOGS_BASE_PATH || "/oplogs/");
@@ -15,9 +16,6 @@ const siteUrl = normalizeSiteUrl(
 );
 const sourceUrl =
   process.env.OPLOGS_SOURCE_URL || "https://github.com/cneuralnetwork/oplogs";
-const pageSourceBase =
-  process.env.OPLOGS_PAGE_SOURCE_BASE ||
-  "https://github.com/cneuralnetwork/oplogs/blob/main/docs-site/build.mjs";
 const stylesSource = await readFile(path.join(sourceRoot, "styles.css"));
 const runtimeSource = await readFile(path.join(sourceRoot, "runtime.js"));
 const assetVersion = createHash("sha256")
@@ -50,6 +48,52 @@ function route(slug = "") {
   return `${basePath}${slug ? `${slug}/` : ""}`;
 }
 
+function githubSource(file) {
+  return `${sourceUrl.replace(/\/+$/g, "")}/blob/main/${String(file).replace(/^\/+/, "")}`;
+}
+
+function headingCase(value) {
+  if (value === "oplogs") return value;
+  let result = value.charAt(0).toUpperCase() + value.slice(1);
+  const technicalTerms = new Map([
+    ["api", "API"],
+    ["cli", "CLI"],
+    ["cnn", "CNN"],
+    ["cpu", "CPU"],
+    ["csv", "CSV"],
+    ["cuda", "CUDA"],
+    ["gpu", "GPU"],
+    ["html", "HTML"],
+    ["json", "JSON"],
+    ["llm", "LLM"],
+    ["otel", "OTel"],
+    ["pdf", "PDF"],
+    ["pytorch", "PyTorch"],
+    ["sdk", "SDK"],
+    ["sql", "SQL"],
+    ["sqlite", "SQLite"],
+    ["tpe", "TPE"],
+    ["vram", "VRAM"],
+  ]);
+  for (const [term, replacement] of technicalTerms) {
+    result = result.replace(new RegExp(`\\b${term}\\b`, "gi"), replacement);
+  }
+  return result.replace(/w&amp;b/gi, "W&amp;B");
+}
+
+function polishHeadings(fragment) {
+  return fragment.replace(
+    /<(h1|h2|h3)([^>]*)>([^<]+)<\/\1>/g,
+    (_match, tag, attributes, label) => `<${tag}${attributes}>${headingCase(label)}</${tag}>`,
+  );
+}
+
+function displayPageTitle(page) {
+  return page.slug.startsWith("reference/api/") || page.slug.startsWith("reference/cli/")
+    ? page.title
+    : headingCase(page.title);
+}
+
 function code(language, source, label = language) {
   return `<div class="code-block" data-code-block>
     <div class="code-meta"><span>${escapeHtml(label)}</span><button type="button" data-copy-code>copy</button></div>
@@ -59,10 +103,6 @@ function code(language, source, label = language) {
 
 function note(title, body) {
   return `<aside class="note"><strong>${escapeHtml(title)}</strong><div>${body}</div></aside>`;
-}
-
-function manualLink(slug, number, title, body) {
-  return `<a class="manual-link" href="${route(slug)}"><span>${escapeHtml(number)}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(body)}</small></a>`;
 }
 
 function dataTable(columns, rows) {
@@ -123,7 +163,7 @@ function apiReferencePage(item) {
     body: `<div class="symbol-page">
       <h1 class="symbol-title"><code>${escapeHtml(item.name)}</code></h1>
       <p class="lead">${escapeHtml(item.summary)}</p>
-      <div class="symbol-meta"><span>${escapeHtml(item.kind)}</span><span>public in v0.1.0</span><span>${escapeHtml(item.source)}</span></div>
+      <div class="symbol-meta"><span>${escapeHtml(item.kind)}</span><a href="${githubSource(item.source)}">Source on GitHub</a></div>
       <h2 id="signature">signature</h2>
       ${code("python", item.signature, item.kind)}
 ${parameters}
@@ -149,7 +189,7 @@ function cliReferencePage(item) {
     body: `<div class="symbol-page command-page">
       <h1 class="symbol-title"><code>${escapeHtml(item.name)}</code></h1>
       <p class="lead">${escapeHtml(item.summary)}</p>
-      <div class="symbol-meta"><span>command</span><span>public in v0.1.0</span><span>${escapeHtml(item.source)}</span></div>
+      <div class="symbol-meta"><span>command</span><a href="${githubSource(item.source)}">Source on GitHub</a></div>
       <h2 id="usage">usage</h2>
       ${code("bash", item.usage, "shell")}
 ${inputs}
@@ -176,11 +216,9 @@ function referenceDirectory(items, baseSlug) {
         <h2 id="${group.replace(/[^a-z0-9]+/g, "-")}">${escapeHtml(group)}</h2>
         <div>${entries
           .map(
-            (item, index) => `<a class="reference-entry" href="${route(`${baseSlug}/${item.slug}`)}">
-              <span>${String(index + 1).padStart(2, "0")}</span>
+            (item) => `<a class="reference-entry" href="${route(`${baseSlug}/${item.slug}`)}">
               <strong><code>${escapeHtml(item.name)}</code></strong>
               <small>${escapeHtml(item.summary)}</small>
-              <b>${escapeHtml(item.kind || "command")}</b>
             </a>`,
           )
           .join("")}</div>
@@ -196,7 +234,6 @@ const apiIndexPage = {
   body: `
     <h1>api directory</h1>
     <p class="lead">Every stable symbol exported from <code>oplogs</code>, plus the three public <code>Run</code> operations used during an experiment. Signatures and defaults match version 0.1.0.</p>
-    <div class="reference-count" aria-label="API reference scope"><strong>${apiSymbols.length}</strong><span>documented entries</span><span>13 package exports</span><span>3 run methods</span></div>
     ${referenceDirectory(apiSymbols, "reference/api")}
     ${note("version boundary", "<p>The directory covers the package-root surface in <code>oplogs.__all__</code> and the public methods on <code>Run</code>. Internal storage, daemon, capture, and normalization helpers are not compatibility promises.</p>")}
   `,
@@ -207,39 +244,32 @@ const cliReferencePages = cliCommands.map(cliReferencePage);
 
 const groups = [
   {
-    title: "start",
+    title: "Start",
     pages: [
-      ["", "overview"],
-      ["getting-started", "quickstart"],
-      ["guides/cnn", "train a cnn"],
-      ["guides/frameworks", "framework autologging"],
+      ["", "Overview"],
+      ["getting-started", "Quickstart"],
+      ["guides/cnn", "Train a CNN"],
     ],
   },
   {
-    title: "log data",
+    title: "Guides",
     pages: [
-      ["guides/logging", "metrics and values"],
-      ["guides/media", "media and artifacts"],
-      ["guides/tracing", "llm and agent traces"],
+      ["guides/logging", "Log data"],
+      ["guides/media", "Media and artifacts"],
+      ["guides/frameworks", "Frameworks"],
+      ["guides/tracing", "LLM and agent traces"],
+      ["guides/dashboard", "Inspect runs"],
+      ["guides/sweeps", "Run sweeps"],
+      ["guides/migration", "Migrate from W&B"],
+      ["troubleshooting", "Troubleshooting"],
     ],
   },
   {
-    title: "operate",
+    title: "Reference",
     pages: [
-      ["guides/dashboard", "inspect runs"],
-      ["guides/sweeps", "run sweeps"],
-      ["guides/migration", "migrate from w&b"],
-      ["troubleshooting", "troubleshooting"],
-    ],
-  },
-  {
-    title: "reference",
-    pages: [
-      ["reference/sdk", "sdk overview"],
-      ["reference/api", "api directory"],
-      ["reference/cli", "command line"],
-      ["architecture", "architecture"],
-      ["benchmark", "ingestion benchmark"],
+      ["reference/api", "Python API"],
+      ["reference/cli", "Command line"],
+      ["architecture", "Architecture"],
     ],
   },
 ];
@@ -253,18 +283,6 @@ const pages = [
       <h1>oplogs</h1>
       <p class="lead"><code>oplogs</code> records an experiment as durable local evidence: metrics, console output, source state, media, traces, artifacts, and machine telemetry. The dashboard runs on your workstation. No account, api key, or hosted service is required.</p>
 
-      <figure class="signature-banner" data-banner>
-        <img src="${basePath}assets/oplogs-journal-field.webp" alt="An experiment signal passes through an archival journal and resolves into plots, image samples, text, tables, and a sealed artifact.">
-        <figcaption><span>signal</span><span>checksummed journal</span><span>inspectable evidence</span></figcaption>
-      </figure>
-
-      <div class="fact-strip" aria-label="oplogs properties">
-        <div><strong>localhost</strong><span>the server binds to 127.0.0.1</span></div>
-        <div><strong>2 lines</strong><span>to start a tracked run</span></div>
-        <div><strong>append-only</strong><span>checksummed event journals</span></div>
-        <div><strong>mit</strong><span>open source, no hosted dependency</span></div>
-      </div>
-
       <h2 id="start-a-run">start a run</h2>
       <p>Install from the repository while the package is not yet published to pypi, then initialize once at the top of your experiment.</p>
       ${code("bash", "pip install -e .")}
@@ -273,20 +291,6 @@ const pages = [
 run = oplogs.init(project="vision-lab")
 run.log({"train/loss": 0.184}, step=400)`, "python")}
       <p>The first run starts the persistent local daemon and opens the dashboard when a desktop session is available. The run URL is also available as <code>run.url</code>.</p>
-
-      <section class="journal-lab" data-journal-lab aria-labelledby="journal-lab-title">
-        <header>
-          <div><strong id="journal-lab-title">one call, different retained facts</strong><span>inspect what <code>run.log</code> seals into the journal</span></div>
-          <output data-journal-status>metric · indexed for charts</output>
-        </header>
-        <div class="journal-switch" role="group" aria-label="Choose a logged value type">
-          <button type="button" aria-pressed="true" data-journal-kind="metric">metric</button>
-          <button type="button" aria-pressed="false" data-journal-kind="media">media</button>
-          <button type="button" aria-pressed="false" data-journal-kind="artifact">artifact</button>
-        </div>
-        <pre><code data-journal-code>run.log({"train/loss": 0.184}, step=400)</code></pre>
-        <div class="journal-track" aria-hidden="true"><span>sdk queue</span><i></i><span>events.jsonl</span><i></i><span>sqlite index</span></div>
-      </section>
 
       <h2 id="what-is-recorded">what is recorded</h2>
       <table>
@@ -299,13 +303,6 @@ run.log({"train/loss": 0.184}, step=400)`, "python")}
       </table>
       ${note("local by construction", "<p>The dashboard and write api are compiled into the python package. Runs stay under one local data root, and oplogs never deletes them automatically.</p>")}
 
-      <h2 id="read-next">read next</h2>
-      <div class="manual-grid">
-        ${manualLink("getting-started", "01", "quickstart", "install, run, log, and open the dashboard")}
-        ${manualLink("guides/cnn", "02", "train a real cnn", "run the retained cpu or sub-500 mb gpu proof")}
-        ${manualLink("guides/logging", "03", "log custom values", "metrics, csv, json, tables, and files")}
-        ${manualLink("architecture", "04", "understand durability", "journals, indexes, blobs, and recovery")}
-      </div>
     `,
   },
   {
@@ -633,29 +630,6 @@ oplogs storage`)}
       <p><code>run.watch(model)</code> checks for PyTorch and raises a direct error when it is unavailable. Install the framework in the same Python environment as oplogs.</p>
     `,
   },
-  {
-    slug: "reference/sdk",
-    title: "sdk overview",
-    description: "Orientation to the public oplogs Python SDK and its complete API directory.",
-    body: `
-      <h1>sdk overview</h1>
-      <p class="lead">Import the supported SDK from the package root. The complete API directory gives every exported symbol and public run method its own source-checked page.</p>
-      <a class="reference-gateway" href="${route("reference/api")}"><strong>open the api directory</strong><span>${apiSymbols.length} entries · signatures · defaults · errors · examples</span></a>
-      <h2 id="minimal-surface">minimal surface</h2>
-      ${code("python", `import oplogs
-
-with oplogs.init(project="vision") as run:
-    run.log({"train/loss": 0.184}, step=400)`)}
-      <p><code>oplogs.init</code> returns a <code>Run</code>. <code>Run.log</code> accepts ordinary scalar and structured values plus explicit rich-value wrappers. The context manager finishes the run.</p>
-      <h2 id="public-groups">public groups</h2>
-      <table><thead><tr><th>group</th><th>entries</th><th>use</th></tr></thead><tbody>
-        <tr><td>run lifecycle</td><td><code>init</code>, <code>Run</code>, <code>Run.finish</code></td><td>create, identify, and close a run</td></tr>
-        <tr><td>logging and tracing</td><td><code>Run.log</code>, <code>Run.watch</code>, <code>trace</code>, <code>enable_otel</code>, <code>sweep_config</code></td><td>record semantic values, models, spans, and trial parameters</td></tr>
-        <tr><td>rich values</td><td><code>File</code>, <code>Artifact</code>, <code>Image</code>, <code>Audio</code>, <code>Video</code>, <code>Table</code>, <code>Json</code>, <code>Histogram</code></td><td>retain files and dashboard-rendered samples</td></tr>
-      </tbody></table>
-      ${note("import boundary", "<p>Use <code>import oplogs</code> for application code. Modules such as <code>oplogs.storage</code>, <code>oplogs.daemon</code>, and <code>oplogs.capture</code> are implementation surfaces, not stable public API.</p>")}
-    `,
-  },
   apiIndexPage,
   ...apiReferencePages,
   {
@@ -665,7 +639,6 @@ with oplogs.init(project="vision") as run:
     body: `
       <h1>command line</h1>
       <p class="lead">All 11 commands operate on the same local data root and daemon as the Python SDK. Open a command for exact arguments, options, defaults, output, and failure boundaries.</p>
-      <div class="reference-count" aria-label="CLI reference scope"><strong>${cliCommands.length}</strong><span>documented commands</span><span>Typer help verified</span><span>version 0.1.0</span></div>
       ${referenceDirectory(cliCommands, "reference/cli")}
       ${note("data root", "<p>Commands resolve the same <code>OPLOGS_HOME</code> override as the SDK. Destructive retention commands are deliberately absent; <code>oplogs stop</code> stops the process but keeps data.</p>")}
     `,
@@ -704,28 +677,6 @@ with oplogs.init(project="vision") as run:
       <p>The intended boundary is a high-throughput workstation store. oplogs does not claim distributed database scale. Metric charts use bounded per-series downsampling, and identical artifact bytes share one blob.</p>
     `,
   },
-  {
-    slug: "benchmark",
-    title: "ingestion benchmark",
-    description: "Reproduce the retained 100,000-event ingestion and chart-query benchmark.",
-    body: `
-      <h1>ingestion benchmark</h1>
-      <p class="lead">The benchmark uses a fresh temporary store and records three numeric metrics per event. The retained script is the authority.</p>
-      <h2 id="run-it">run it</h2>
-      ${code("bash", `.venv/bin/python scripts/benchmark_ingest.py --events 100000`)}
-      <h2 id="retained-observation">retained observation</h2>
-      ${code("text", `events=100000
-seconds=10.510
-events_per_second=9514
-chart_query_ms=651.1
-chart_points=7698
-journal_mib=33.72`, "development workstation · 2026-08-15")}
-      <p>The 100,000 events create 300,000 indexed metric points. Journal and SQLite writes share one local filesystem.</p>
-      ${note("not a hardware guarantee", "<p>Storage, CPU, filesystem, and concurrent load change the result. Run the script on the target workstation before setting latency or throughput expectations.</p>")}
-      <h2 id="chart-query">chart query</h2>
-      <p>The query returns an endpoint-preserving downsample for each series. It does not transfer all 300,000 points to the browser.</p>
-    `,
-  },
 ];
 
 const pageBySlug = new Map(pages.map((page) => [page.slug, page]));
@@ -758,20 +709,7 @@ function tableOfContents(body) {
 }
 
 function navigation(current) {
-  const contextualGroups = [...groups];
-  if (current === "reference/api" || current.startsWith("reference/api/")) {
-    contextualGroups.push({
-      title: "python api",
-      pages: apiSymbols.map((item) => [`reference/api/${item.slug}`, item.name]),
-    });
-  }
-  if (current === "reference/cli" || current.startsWith("reference/cli/")) {
-    contextualGroups.push({
-      title: "cli commands",
-      pages: cliCommands.map((item) => [`reference/cli/${item.slug}`, item.name]),
-    });
-  }
-  return contextualGroups
+  return groups
     .map(
       (group) => `<section class="nav-group"><h2>${escapeHtml(group.title)}</h2><ul>${group.pages
         .map(([slug, label]) => `<li><a href="${route(slug)}"${slug === current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</a></li>`)
@@ -781,16 +719,14 @@ function navigation(current) {
 }
 
 function render(page, index) {
-  const toc = tableOfContents(page.body);
+  const pageBody = polishHeadings(page.body);
+  const toc = tableOfContents(pageBody);
   const previous = pages[index - 1];
   const next = pages[index + 1];
   const canonical = `${siteUrl}${page.slug ? `${page.slug}/` : ""}`;
-  const pageSource = pageSourceBase.endsWith("/")
-    ? `${pageSourceBase}${page.slug ? `${page.slug}/` : ""}index.html`
-    : pageSourceBase;
   const pager = `<nav class="page-pager" aria-label="Documentation pages">
-    ${previous ? `<a href="${route(previous.slug)}"><span>previous</span><strong>${escapeHtml(previous.title)}</strong></a>` : "<span></span>"}
-    ${next ? `<a href="${route(next.slug)}"><span>next</span><strong>${escapeHtml(next.title)}</strong></a>` : "<span></span>"}
+    ${previous ? `<a href="${route(previous.slug)}"><span>Previous</span><strong>${escapeHtml(displayPageTitle(previous))}</strong></a>` : "<span></span>"}
+    ${next ? `<a href="${route(next.slug)}"><span>Next</span><strong>${escapeHtml(displayPageTitle(next))}</strong></a>` : "<span></span>"}
   </nav>`;
   return `<!doctype html>
 <html lang="en" data-theme="dark">
@@ -799,13 +735,13 @@ function render(page, index) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${escapeHtml(page.description)}">
   <meta name="theme-color" content="#0b0d0c">
-  <meta property="og:title" content="${escapeHtml(page.title)} · oplogs">
+  <meta property="og:title" content="${escapeHtml(displayPageTitle(page))} · oplogs">
   <meta property="og:description" content="${escapeHtml(page.description)}">
   <meta property="og:image" content="${siteUrl}assets/oplogs-journal-field.webp">
   <link rel="canonical" href="${canonical}">
   <link rel="icon" href="${basePath}assets/oplogs-mark.png" type="image/png">
   <link rel="stylesheet" href="${basePath}styles.css?v=${assetVersion}">
-  <title>${escapeHtml(page.title)} · oplogs</title>
+  <title>${escapeHtml(displayPageTitle(page))} · oplogs</title>
   <script>try{document.documentElement.dataset.theme=localStorage.getItem("oplogs-docs-theme")||"dark"}catch(_error){document.documentElement.dataset.theme="dark"}</script>
 </head>
 <body data-page="${escapeHtml(page.slug || "overview")}" data-search-index="${basePath}search-index.json?v=${assetVersion}">
@@ -814,28 +750,24 @@ function render(page, index) {
     <a class="brand" href="${basePath}" aria-label="oplogs documentation home"><img src="${basePath}assets/oplogs-mark.png" alt=""><span>oplogs</span><b>docs</b></a>
     <div class="search-wrap">
       <label class="visually-hidden" for="docs-search">search documentation</label>
-      <input id="docs-search" type="search" placeholder="search the field manual" autocomplete="off" spellcheck="false" aria-expanded="false" aria-controls="search-results" data-search>
+      <input id="docs-search" type="search" placeholder="Search documentation" autocomplete="off" spellcheck="false" aria-expanded="false" aria-controls="search-results" data-search>
       <kbd aria-hidden="true">/</kbd>
       <div id="search-results" class="search-results" role="listbox" hidden data-search-results></div>
     </div>
     <nav class="header-actions" aria-label="Project links">
-      <a href="${route("guides/cnn")}">cnn proof</a>
-      <a href="${sourceUrl}">source</a>
-      <span>v0.1.0</span>
-      <button type="button" data-theme-toggle>use light</button>
-      <button class="menu-button" type="button" aria-expanded="false" aria-controls="documentation-sidebar" data-menu-toggle>menu</button>
+      <a href="${sourceUrl}">GitHub</a>
+      <button type="button" data-theme-toggle>Light mode</button>
+      <button class="menu-button" type="button" aria-expanded="false" aria-controls="documentation-sidebar" data-menu-toggle>Menu</button>
     </nav>
   </header>
   <aside id="documentation-sidebar" class="sidebar" aria-label="Documentation navigation">${navigation(page.slug)}</aside>
   <button class="sidebar-backdrop" type="button" aria-label="Close documentation navigation" data-sidebar-backdrop></button>
   <main class="page-layout" id="main-content">
     <div class="content-grid">
-      <article class="article">${page.body}${pager}</article>
+      <article class="article">${pageBody}${pager}</article>
       <aside class="toc" aria-label="On this page">
-        <button type="button" data-copy-link>copy page link</button>
-        <strong>on this page</strong>
+        <strong>On this page</strong>
         <ul>${toc.map((item) => `<li><a href="#${item.id}" data-level="${item.level.slice(1)}">${escapeHtml(item.label)}</a></li>`).join("")}</ul>
-        <a class="source-link" href="${pageSource}">view page source</a>
       </aside>
     </div>
   </main>
@@ -848,7 +780,9 @@ await rm(outputRoot, { recursive: true, force: true });
 await mkdir(path.join(outputRoot, "assets"), { recursive: true });
 await mkdir(path.join(outputRoot, "fonts"), { recursive: true });
 await cp(path.join(sourceRoot, "assets"), path.join(outputRoot, "assets"), { recursive: true });
-await cp(path.join(repositoryRoot, "web", "public", "fonts"), path.join(outputRoot, "fonts"), { recursive: true });
+await cp(path.join(fontRoot, "Geist-Variable.woff2"), path.join(outputRoot, "fonts", "Geist-Variable.woff2"));
+await cp(path.join(fontRoot, "GeistMono-Variable.woff2"), path.join(outputRoot, "fonts", "GeistMono-Variable.woff2"));
+await cp(path.join(repositoryRoot, "web", "public", "fonts", "Geist-OFL.txt"), path.join(outputRoot, "fonts", "Geist-OFL.txt"));
 await writeFile(path.join(outputRoot, "styles.css"), stylesSource);
 await writeFile(path.join(outputRoot, "runtime.js"), runtimeSource);
 
@@ -862,11 +796,11 @@ await writeFile(
   path.join(outputRoot, "search-index.json"),
   JSON.stringify(
     pages.map((page) => ({
-      title: page.title,
+      title: displayPageTitle(page),
       url: route(page.slug),
       description: page.description,
-      headings: tableOfContents(page.body).map((item) => item.label),
-      text: cleanText(page.body),
+      headings: tableOfContents(polishHeadings(page.body)).map((item) => item.label),
+      text: cleanText(polishHeadings(page.body)),
     })),
   ),
 );

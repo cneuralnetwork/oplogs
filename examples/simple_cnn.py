@@ -112,11 +112,16 @@ def write_grayscale_grid(images: Tensor, destination: Path, columns: int = 4) ->
 
 
 def train(args: argparse.Namespace) -> dict[str, object]:
-    torch.manual_seed(args.seed)
+    sweep = oplogs.sweep_config()
+    seed = int(sweep.get("seed", args.seed))
+    batch_size = int(sweep.get("batch_size", args.batch_size))
+    learning_rate = float(sweep.get("learning_rate", args.learning_rate))
+
+    torch.manual_seed(seed)
     torch.set_num_threads(args.threads)
-    train_images, train_labels = make_dataset(args.train_samples, args.image_size, args.seed)
+    train_images, train_labels = make_dataset(args.train_samples, args.image_size, seed)
     validation_images, validation_labels = make_dataset(
-        args.validation_samples, args.image_size, args.seed + 1
+        args.validation_samples, args.image_size, seed + 1
     )
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -129,18 +134,18 @@ def train(args: argparse.Namespace) -> dict[str, object]:
             "dataset": "synthetic-stripes",
             "device": "cpu",
             "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "learning_rate": args.learning_rate,
+            "batch_size": batch_size,
+            "learning_rate": learning_rate,
             "train_samples": args.train_samples,
             "validation_samples": args.validation_samples,
-            "seed": args.seed,
+            "seed": seed,
         },
         tags=["cnn", "pytorch", "real-training", "offline-data"],
         open=False,
     ) as run:
         model = TinyCNN(args.image_size)
         run.watch(model, gradients=True, every=32)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         criterion = nn.CrossEntropyLoss()
         parameter_count = sum(parameter.numel() for parameter in model.parameters())
         started = time.perf_counter()
@@ -155,8 +160,8 @@ def train(args: argparse.Namespace) -> dict[str, object]:
             permutation = torch.randperm(args.train_samples)
             loss_total = 0.0
             correct = 0
-            for start in range(0, args.train_samples, args.batch_size):
-                indexes = permutation[start : start + args.batch_size]
+            for start in range(0, args.train_samples, batch_size):
+                indexes = permutation[start : start + batch_size]
                 images = train_images[indexes]
                 labels = train_labels[indexes]
                 optimizer.zero_grad(set_to_none=True)

@@ -56,7 +56,7 @@ function App() {
       setStorage(nextStorage)
       setError('')
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'unable to reach the local daemon')
+      setError(reason instanceof Error ? reason.message : 'Unable to reach the local daemon.')
     }
   }, [])
 
@@ -71,7 +71,7 @@ function App() {
         setArtifacts(nextArtifacts)
       } else if (currentPath === '/traces') setTraces(await api.traces())
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'unable to load this view')
+      setError(reason instanceof Error ? reason.message : 'Unable to load this view.')
     }
   }, [])
 
@@ -81,7 +81,7 @@ function App() {
     void initializeSession()
       .then(setStorage)
       .then(() => Promise.all([loadCore(), loadRoute(window.location.pathname)]))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'unable to initialize local session'))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to initialize the local session.'))
       .finally(() => setLoading(false))
     const events = new EventSource('/api/stream')
     let refreshTimer = 0
@@ -111,11 +111,11 @@ function App() {
   }, [deferredSearch, project, runs])
 
   const runStats = useMemo(() => [
-    { label: 'all runs', value: runs.length, note: 'retained on this machine', tone: 'indigo' },
-    { label: 'running now', value: runs.filter((run) => run.state === 'running').length, note: 'streaming live events', tone: 'mint' },
-    { label: 'finished', value: runs.filter((run) => run.state === 'finished').length, note: 'completed experiments', tone: 'coral' },
-    { label: 'projects', value: projects.length, note: 'active workspaces', tone: 'amber' },
-    { label: 'events', value: storage?.events ?? 0, note: 'checksummed records', tone: 'plum' },
+    { label: 'All runs', value: runs.length, note: 'Retained on this machine', tone: 'indigo' },
+    { label: 'Running now', value: runs.filter((run) => run.state === 'running').length, note: 'Streaming live events', tone: 'mint' },
+    { label: 'Finished', value: runs.filter((run) => run.state === 'finished').length, note: 'Completed experiments', tone: 'coral' },
+    { label: 'Projects', value: projects.length, note: 'Active workspaces', tone: 'amber' },
+    { label: 'Events', value: storage?.events ?? 0, note: 'Checksummed records', tone: 'plum' },
   ], [projects.length, runs, storage?.events])
 
   const register = async (artifactId: string, collection: string) => {
@@ -128,8 +128,8 @@ function App() {
       title,
       project: project || undefined,
       blocks: [
-        { type: 'heading', text: 'experiment summary' },
-        { type: 'text', text: 'add findings, charts, tables, and samples from the local report editor.' },
+        { type: 'heading', text: 'Experiment summary' },
+        { type: 'text', text: 'Add findings, charts, tables, and samples from the local report editor.' },
       ],
     })
     await Promise.all([loadCore(), loadRoute(path)])
@@ -145,7 +145,14 @@ function App() {
   if (runMatch) {
     content = <RunDetail runId={runMatch[1]} navigate={navigate} />
   } else if (path === '/projects') {
-    content = <ProjectsView projects={projects} select={(name) => { setProject(name); navigate('/') }} />
+    content = (
+      <ProjectsView
+        projects={projects}
+        runs={runs}
+        selectProject={(name) => { setProject(name); navigate('/') }}
+        selectRun={(run) => navigate(`/runs/${run.id}`)}
+      />
+    )
   } else if (path === '/artifacts') {
     content = <ArtifactsView artifacts={artifacts} />
   } else if (path === '/sweeps') {
@@ -162,18 +169,18 @@ function App() {
     content = (
       <div className="runs-page">
         <header className="page-header runs-heading">
-          <div><h1>runs</h1><p>every experiment on this machine, live and retained.</p></div>
-          <label className="select-field"><span className="sr-only">filter project</span><select value={project} onChange={(event) => setProject(event.target.value)}><option value="">all projects</option>{projects.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+          <div><h1>Runs</h1><p>Every experiment on this machine, live and retained.</p></div>
+          <label className="select-field"><span className="sr-only">Filter project</span><select value={project} onChange={(event) => setProject(event.target.value)}><option value="">All projects</option>{projects.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
         </header>
         {runs.length === 0 && !loading ? <EmptyState /> : <>
-          <section className="overview-stats" aria-label="workspace summary">
+          <section className="overview-stats" aria-label="Workspace summary">
             {runStats.map((stat) => <article key={stat.label} data-tone={stat.tone}><div><span>{stat.label}</span><small>{stat.note}</small></div><strong>{stat.value.toLocaleString()}</strong></article>)}
           </section>
           <section className="data-card runs-ledger">
-            <header className="card-heading"><div><h2>recent runs</h2><p>open a row to inspect metrics, samples, files, and traces.</p></div><span>{visibleRuns.length} shown</span></header>
+            <header className="card-heading"><div><h2>Recent runs</h2><p>Open a row to inspect metrics, samples, files, and traces.</p></div><span>{visibleRuns.length} shown</span></header>
             <RunsTable runs={visibleRuns} onSelect={(run) => navigate(`/runs/${run.id}`)} />
           </section>
-          {!visibleRuns.length && <div className="tab-empty">no runs match this filter.</div>}
+          {!visibleRuns.length && <div className="tab-empty">No runs match this filter.</div>}
         </>}
       </div>
     )
@@ -186,10 +193,10 @@ function App() {
       search={search}
       onSearch={(value) => { setSearch(value); if (path !== '/') navigate('/') }}
       runCount={storage?.runs ?? runs.length}
-      footer={<div className="local-status">localhost<br /><span>{storage ? `${storage.runs} retained runs` : 'connecting'}</span></div>}
+      footer={<div className="local-status">localhost<br /><span>{storage ? `${storage.runs} retained runs` : 'Connecting'}</span></div>}
     >
       {error && <div className="global-error" role="alert">{error}</div>}
-      {loading && <div className="page-loading">connecting to the local store…</div>}
+      {loading && <div className="page-loading">Connecting to the local store…</div>}
       {!loading && content}
     </Shell>
   )

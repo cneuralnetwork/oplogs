@@ -125,7 +125,7 @@ async function contrastAudit(selectors = ['body', '.article .lead', '.article p'
 await Promise.all([command('Page.enable'), command('Runtime.enable'), command('Network.enable')])
 await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
 await navigate(baseUrl)
-await waitFor(`document.readyState === 'complete' && Boolean(document.querySelector('[data-journal-lab]'))`, 'overview')
+await waitFor(`document.readyState === 'complete' && document.querySelector('h1')?.textContent === 'oplogs'`, 'overview')
 
 const failures = []
 const darkContrast = await contrastAudit()
@@ -135,20 +135,15 @@ const desktop = await evaluate(`({
   heading: document.querySelector('h1')?.textContent,
   navLinks: document.querySelectorAll('.sidebar .nav-group a').length,
   overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  bannerLoaded: document.querySelector('.signature-banner img')?.complete,
-  imageWidth: document.querySelector('.signature-banner img')?.naturalWidth,
+  github: document.querySelector('.header-actions a')?.href,
+  removedControls: document.querySelectorAll('[data-journal-lab], [data-copy-link], .reference-count').length,
 })`)
-if (desktop.title !== 'overview · oplogs') failures.push(`unexpected title: ${desktop.title}`)
+if (desktop.title !== 'Overview · oplogs') failures.push(`unexpected title: ${desktop.title}`)
 if (desktop.heading !== 'oplogs') failures.push(`unexpected heading: ${desktop.heading}`)
-if (desktop.navLinks !== 16) failures.push(`expected 16 navigation links, found ${desktop.navLinks}`)
+if (desktop.navLinks !== 14) failures.push(`expected 14 navigation links, found ${desktop.navLinks}`)
 if (desktop.overflow > 0) failures.push(`desktop overflows by ${desktop.overflow}px`)
-if (!desktop.bannerLoaded || desktop.imageWidth < 1000) failures.push('banner did not load at full resolution')
-
-await click('[data-journal-kind="media"]')
-await waitFor(`document.querySelector('[data-journal-status]')?.textContent.includes('media')`, 'media journal specimen')
-if (!(await evaluate(`document.querySelector('[data-journal-status]')?.textContent.includes('media')`))) {
-  failures.push('journal specimen did not switch to media')
-}
+if (desktop.github !== 'https://github.com/cneuralnetwork/oplogs') failures.push(`unexpected GitHub link: ${desktop.github}`)
+if (desktop.removedControls !== 0) failures.push(`found ${desktop.removedControls} removed controls`)
 
 await click('[data-theme-toggle]')
 if ((await evaluate('document.documentElement.dataset.theme')) !== 'light') failures.push('theme control did not select light')
@@ -168,7 +163,7 @@ if (search.expanded !== 'true' || search.count < 1 || !search.first) failures.pu
 if (search.first !== expectedCnnPath) failures.push(`search ranked an unexpected vram result: ${search.first}`)
 
 await navigate(new URL('getting-started/', baseUrl).href)
-if ((await evaluate(`document.querySelector('h1')?.textContent`)) !== 'quickstart') failures.push('quickstart navigation did not render')
+if ((await evaluate(`document.querySelector('h1')?.textContent`)) !== 'Quickstart') failures.push('quickstart navigation did not render')
 if ((await evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')) > 0) failures.push('quickstart overflows')
 
 await navigate(new URL('reference/api/', baseUrl).href)
@@ -176,17 +171,17 @@ await waitFor(`document.querySelectorAll('.reference-entry').length === 16`, 'ap
 const apiDirectory = await evaluate(`({
   heading: document.querySelector('h1')?.textContent,
   entries: document.querySelectorAll('.reference-entry').length,
-  contextualNav: document.querySelectorAll('.sidebar .nav-group:last-child a').length,
+  sidebarLinks: document.querySelectorAll('.sidebar .nav-group a').length,
   overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
 })`)
-if (apiDirectory.heading !== 'api directory') failures.push('api directory heading did not render')
+if (apiDirectory.heading !== 'API directory') failures.push('api directory heading did not render')
 if (apiDirectory.entries !== 16) failures.push(`expected 16 api entries, found ${apiDirectory.entries}`)
-if (apiDirectory.contextualNav !== 16) failures.push(`expected 16 contextual api links, found ${apiDirectory.contextualNav}`)
+if (apiDirectory.sidebarLinks !== 14) failures.push(`expected 14 concise sidebar links, found ${apiDirectory.sidebarLinks}`)
 if (apiDirectory.overflow > 0) failures.push(`api directory overflows by ${apiDirectory.overflow}px`)
-const apiDarkContrast = await contrastAudit(['.reference-count span', '.reference-entry > span', '.reference-entry > small', '.reference-entry > b'])
+const apiDarkContrast = await contrastAudit(['.reference-entry > strong', '.reference-entry > small'])
 for (const item of apiDarkContrast) if (item.ratio < 4.5) failures.push(`dark api contrast ${item.selector}: ${item.ratio.toFixed(2)}`)
 await click('[data-theme-toggle]')
-const apiLightContrast = await contrastAudit(['.reference-count span', '.reference-entry > span', '.reference-entry > small', '.reference-entry > b'])
+const apiLightContrast = await contrastAudit(['.reference-entry > strong', '.reference-entry > small'])
 for (const item of apiLightContrast) if (item.ratio < 4.5) failures.push(`light api contrast ${item.selector}: ${item.ratio.toFixed(2)}`)
 await click('[data-theme-toggle]')
 await capture(apiDesktopOutput)
@@ -209,18 +204,17 @@ if (apiSearch.first === expectedRunLogPath) {
     signature: document.querySelector('.code-block code')?.textContent,
     parameterRows: document.querySelectorAll('table tbody tr').length,
     copyButtons: document.querySelectorAll('[data-copy-code]').length,
+    sourceHref: document.querySelector('.symbol-meta a')?.href,
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
   })`)
   if (!apiSymbol.signature?.includes('values: dict[str, Any]')) failures.push('Run.log signature is incomplete')
   if (apiSymbol.parameterRows < 10) failures.push(`Run.log reference is missing value rows: ${apiSymbol.parameterRows}`)
   if (apiSymbol.copyButtons < 2) failures.push('Run.log code copy controls are missing')
+  if (apiSymbol.sourceHref !== 'https://github.com/cneuralnetwork/oplogs/blob/main/src/oplogs/sdk.py') failures.push(`Run.log source does not link to GitHub: ${apiSymbol.sourceHref}`)
   if (apiSymbol.overflow > 0) failures.push(`Run.log reference overflows by ${apiSymbol.overflow}px`)
   await click('.code-block [data-copy-code]')
   await waitFor(`document.querySelector('.code-block [data-copy-code]')?.textContent === 'copied'`, 'code copy confirmation')
   if ((await evaluate(`document.querySelector('.code-block [data-copy-code]')?.textContent`)) !== 'copied') failures.push('code copy control did not confirm')
-  await click('[data-copy-link]')
-  await waitFor(`document.querySelector('[data-copy-link]')?.textContent === 'link copied'`, 'page link copy confirmation')
-  if ((await evaluate(`document.querySelector('[data-copy-link]')?.textContent`)) !== 'link copied') failures.push('page link copy control did not confirm')
   await capture(symbolDesktopOutput)
 }
 
@@ -271,7 +265,7 @@ for (const item of indexedPages) {
     routeAudit.failures.push({ url: item.url, ...state })
   }
 }
-if (routeAudit.count !== 43) failures.push(`expected 43 rendered routes, found ${routeAudit.count}`)
+if (routeAudit.count !== 41) failures.push(`expected 41 rendered routes, found ${routeAudit.count}`)
 if (routeAudit.failures.length) failures.push(`rendered route audit failed for ${routeAudit.failures.length} pages`)
 
 console.log(JSON.stringify({ failures, consoleErrors, desktop, darkContrast, lightContrast, search, apiDirectory, apiDarkContrast, apiLightContrast, apiSearch, apiSymbol, menu, routeAudit, desktopOutput, mobileOutput, apiDesktopOutput, apiMobileOutput, symbolDesktopOutput, symbolMobileOutput }, null, 2))

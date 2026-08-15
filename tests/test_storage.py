@@ -1,9 +1,37 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from oplogs.models import Event
 from oplogs.storage import Storage
+
+
+def test_finished_journal_event_finalizes_durable_run(store: Storage) -> None:
+    run = store.create_run("durability", "completed-locally", run_id="terminal-event")
+    finished = Event(
+        run.id,
+        0,
+        "run.finished",
+        {"state": "finished"},
+        timestamp="2026-08-16T12:00:00+00:00",
+    )
+
+    store.append_event(finished)
+
+    record = store.get_run(run.id)
+    assert record["state"] == "finished"
+    assert record["finished_at"] == finished.timestamp
+    manifest = json.loads((store.runs_dir / run.id / "manifest.json").read_text())
+    assert manifest["state"] == "finished"
+    assert manifest["finished_at"] == finished.timestamp
+
+    store.database_path.unlink()
+    Path(f"{store.database_path}-wal").unlink(missing_ok=True)
+    Path(f"{store.database_path}-shm").unlink(missing_ok=True)
+    recovered = Storage(store.root)
+    assert recovered.rebuild() == {"rebuilt": 1, "invalid": 0}
+    assert recovered.get_run(run.id)["state"] == "finished"
 
 
 def test_journal_is_idempotent_and_rebuildable(store: Storage) -> None:

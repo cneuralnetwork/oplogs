@@ -33,6 +33,19 @@ async def test_full_ingestion_and_query_flow(store: Storage) -> None:
         assert (await client.get("/api/runs/api-run/history")).json()["loss"][0]["value"] == 0.25
         assert (await client.get("/api/runs")).json()[0]["summary"]["loss"] == 0.25
 
+        finished = Event(
+            "api-run", 1, "run.finished", {"state": "finished"}
+        ).seal()
+        response = await client.post(
+            "/api/runs/api-run/events",
+            headers={"X-OPLOGS-Token": "secret"},
+            json=[finished.to_dict()],
+        )
+        assert response.json() == {"accepted": 1}
+        retained = (await client.get("/api/runs")).json()
+        assert retained[0]["state"] == "finished"
+        assert retained[0]["finished_at"] == finished.timestamp
+
 
 @pytest.mark.asyncio
 async def test_writes_require_local_capability(store: Storage) -> None:

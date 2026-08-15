@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
+import { useTheme } from '../theme-context'
 import type { HistoryPoint } from '../types'
 
 interface LineChartProps {
@@ -10,6 +11,7 @@ interface LineChartProps {
 
 export function LineChart({ series, height = 280, compact = false }: LineChartProps) {
   const host = useRef<HTMLDivElement>(null)
+  const { theme } = useTheme()
 
   useEffect(() => {
     if (!host.current || series.length === 0) return
@@ -21,7 +23,11 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
         return allSteps.map((step) => lookup.get(step) ?? null)
       }),
     ]
-    const palette = ['#6874ed', '#ee7651', '#36af80', '#a973ce', '#d79a46']
+    const styles = getComputedStyle(document.documentElement)
+    const palette = ['--indigo', '--coral', '--mint', '--plum', '--amber'].map((name) => styles.getPropertyValue(name).trim())
+    const axis = styles.getPropertyValue('--chart-axis').trim()
+    const grid = styles.getPropertyValue('--chart-grid').trim()
+    const tick = styles.getPropertyValue('--chart-tick').trim()
     const plot = new uPlot(
       {
         width: host.current.clientWidth,
@@ -30,11 +36,11 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
         legend: { show: !compact },
         scales: { x: { time: false } },
         axes: [
-          { stroke: '#92949d', grid: { stroke: '#eceef2', width: 1 }, ticks: { stroke: '#dfe1e6' }, font: '11px oplogs sans' },
-          { stroke: '#92949d', grid: { stroke: '#eceef2', width: 1 }, ticks: { stroke: '#dfe1e6' }, font: '11px oplogs sans', size: 52 },
+          { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { stroke: tick }, font: '11px "Geist UI"' },
+          { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { stroke: tick }, font: '11px "Geist UI"', size: 52 },
         ],
         series: [
-          { label: 'value' },
+          { label: 'Value' },
           ...series.map((item, index) => ({ label: item.label, stroke: item.color ?? palette[index % palette.length], width: 2.4, points: { show: false }, spanGaps: true })),
         ],
       },
@@ -47,10 +53,10 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
       observer.disconnect()
       plot.destroy()
     }
-  }, [compact, height, series])
+  }, [compact, height, series, theme])
 
   if (series.length === 0 || series.every((item) => item.points.length === 0)) {
-    return <div className="chart-empty">no numeric history has arrived yet.</div>
+    return <div className="chart-empty">No numeric history has arrived yet.</div>
   }
   return <div className="chart" ref={host} />
 }

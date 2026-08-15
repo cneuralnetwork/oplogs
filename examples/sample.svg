@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="title">
+  <title id="title">Generated geometric sample</title>
+  <rect width="800" height="600" fill="#e8efe9"/>
+  <path d="M0 410C170 330 270 490 430 390C590 290 650 330 800 250V600H0Z" fill="#2b5f42"/>
+  <path d="M0 470C160 410 330 530 510 440C650 370 720 410 800 390V600H0Z" fill="#173b29"/>
+  <circle cx="605" cy="165" r="72" fill="#d4b477"/>
+  <path d="M215 410 345 190 475 410Z" fill="#91a99a"/>
+  <path d="M310 250 345 190 382 252Z" fill="#f5f7f4"/>
+</svg>

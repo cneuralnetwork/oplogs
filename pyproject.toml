@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oplogs"
+version = "0.1.0"
+description = "Local-first, open-source experiment tracking for machine learning and agents"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "cneuralnetwork" }]
+keywords = ["machine-learning", "experiment-tracking", "mlops", "observability", "llm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "fastapi>=0.115,<1",
+  "httpx>=0.27,<1",
+  "msgpack>=1.1,<2",
+  "platformdirs>=4.3,<5",
+  "psutil>=6,<8",
+  "pydantic>=2.9,<3",
+  "python-multipart>=0.0.12,<1",
+  "typer>=0.15,<1",
+  "uvicorn>=0.34,<1",
+]
+
+[project.optional-dependencies]
+analytics = ["duckdb>=1.2,<2", "pyarrow>=18,<22"]
+sweeps = ["optuna>=4,<5", "pyyaml>=6,<7"]
+reports = ["playwright>=1.50,<2"]
+otel = ["opentelemetry-sdk>=1.30,<2"]
+all = [
+  "duckdb>=1.2,<2",
+  "pyarrow>=18,<22",
+  "optuna>=4,<5",
+  "pyyaml>=6,<7",
+  "playwright>=1.50,<2",
+  "opentelemetry-sdk>=1.30,<2",
+]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+oplogs = "oplogs.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/cneuralnetwork/oplogs"
+Repository = "https://github.com/cneuralnetwork/oplogs"
+Issues = "https://github.com/cneuralnetwork/oplogs/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oplogs"]
+artifacts = ["src/oplogs/static/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]

@@ -12,6 +12,31 @@ interface RunDetailProps {
 
 const numberFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 })
 
+function formatMetric(value: number) {
+  const magnitude = Math.abs(value)
+  if (magnitude !== 0 && (magnitude < 0.0001 || magnitude >= 1_000_000)) {
+    return value.toExponential(3)
+  }
+  return numberFormat.format(value)
+}
+
+function metricPriority(key: string) {
+  const normalized = key.toLowerCase()
+  if (/^(validation|val)[/. _-].*(accuracy|acc)$/.test(normalized)) return 0
+  if (/^(validation|val)[/. _-].*loss$/.test(normalized)) return 1
+  if (/^train(ing)?[/. _-].*(accuracy|acc)$/.test(normalized)) return 2
+  if (/^train(ing)?[/. _-].*loss$/.test(normalized)) return 3
+  if (normalized.includes('accuracy') || normalized.endsWith('/acc')) return 10
+  if (normalized.includes('loss')) return 11
+  if (normalized.startsWith('gradients.')) return 40
+  if (normalized.includes('.lr.') || normalized.endsWith('/lr')) return 41
+  return 20
+}
+
+function compareMetrics([left]: [string, unknown], [right]: [string, unknown]) {
+  return metricPriority(left) - metricPriority(right) || left.localeCompare(right)
+}
+
 function humanBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
@@ -62,7 +87,9 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
   }, [runId])
 
   const metricEntries = useMemo(
-    () => Object.entries(history).filter(([key]) => !key.startsWith('system.') && !key.startsWith('process.') && !key.startsWith('gpu.')),
+    () => Object.entries(history)
+      .filter(([key]) => !key.startsWith('system.') && !key.startsWith('process.') && !key.startsWith('gpu.'))
+      .sort(compareMetrics),
     [history],
   )
   const systemEntries = useMemo(
@@ -76,7 +103,10 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
   if (error) return <div className="load-error"><h1>Run unavailable</h1><p>{error}</p><button onClick={() => navigate('/')}>Back to runs</button></div>
   if (!run) return <div className="page-loading">Loading run…</div>
 
-  const summary = Object.entries(run.summary).filter(([, value]) => typeof value === 'number').slice(0, 4)
+  const summary = Object.entries(run.summary)
+    .filter(([, value]) => typeof value === 'number')
+    .sort(compareMetrics)
+    .slice(0, 4)
 
   return (
     <div className="run-page">
@@ -90,7 +120,7 @@ export function RunDetail({ runId, navigate }: RunDetailProps) {
       </header>
 
       {summary.length > 0 && <section className="metric-strip" aria-label="Latest metrics">
-        {summary.map(([key, value]) => <div key={key}><span>{key}</span><strong>{numberFormat.format(Number(value))}</strong></div>)}
+        {summary.map(([key, value]) => <div key={key}><span>{key}</span><strong>{formatMetric(Number(value))}</strong></div>)}
       </section>}
 
       <Tabs.Root className="run-tabs" defaultValue="overview">

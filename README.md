@@ -44,6 +44,22 @@ run.log(
 tables, JSON, histograms, and typed artifacts. Files are content-addressed by SHA-256
 and deduplicated in the local blob store.
 
+## Run the real CNN proof
+
+`examples/simple_cnn.py` trains a two-layer PyTorch CNN with backpropagation on a
+locally generated image classification task. It records epoch metrics, optimizer
+learning rate, sampled gradients, console output, process telemetry, a prediction
+table, confidence histogram, image grid, trace, and reloadable model checkpoint.
+No dataset download is required.
+
+```bash
+uv pip install --python .venv/bin/python torch \
+  --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/python examples/simple_cnn.py
+```
+
+The script prints the exact localhost run URL when training finishes.
+
 ## Framework and agent support
 
 Autologging is enabled by default and activates only when a supported library is

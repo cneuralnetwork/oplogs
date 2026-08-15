@@ -12,6 +12,7 @@ const socket = new WebSocket(target.webSocketDebuggerUrl)
 const pending = new Map()
 const events = []
 let nextId = 1
+let resolveLoad
 
 socket.addEventListener('message', (message) => {
   const packet = JSON.parse(message.data)
@@ -25,6 +26,7 @@ socket.addEventListener('message', (message) => {
   if (packet.method === 'Runtime.consoleAPICalled' || packet.method === 'Runtime.exceptionThrown') {
     events.push(packet)
   }
+  if (packet.method === 'Page.loadEventFired') resolveLoad?.()
 })
 
 await new Promise((resolve, reject) => {
@@ -50,7 +52,16 @@ await Promise.all([
   command('Network.enable'),
   command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 700 }),
 ])
+const loaded = new Promise((resolve) => { resolveLoad = resolve })
 await command('Page.navigate', { url })
+let loadTimer
+await Promise.race([
+  loaded,
+  new Promise((_, reject) => {
+    loadTimer = setTimeout(() => reject(new Error('Page load timed out')), 15_000)
+  }),
+])
+clearTimeout(loadTimer)
 
 const deadline = Date.now() + 15_000
 let state

@@ -21,7 +21,7 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
         return allSteps.map((step) => lookup.get(step) ?? null)
       }),
     ]
-    const palette = ['#255f3d', '#758f7b', '#9b5b48', '#535f57', '#92713d']
+    const palette = ['#315b42', '#6f8976', '#8b5c4e', '#566258', '#82704b']
     const plot = new uPlot(
       {
         width: host.current.clientWidth,
@@ -30,8 +30,8 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
         legend: { show: !compact },
         scales: { x: { time: false } },
         axes: [
-          { stroke: '#68726b', grid: { stroke: '#e8ede9', width: 1 }, ticks: { stroke: '#d4ddd6' }, font: '12px system-ui' },
-          { stroke: '#68726b', grid: { stroke: '#e8ede9', width: 1 }, ticks: { stroke: '#d4ddd6' }, font: '12px system-ui', size: 52 },
+          { stroke: '#646d65', grid: { stroke: '#e7ece8', width: 1 }, ticks: { stroke: '#d3dbd5' }, font: '12px Oplogs Sans' },
+          { stroke: '#646d65', grid: { stroke: '#e7ece8', width: 1 }, ticks: { stroke: '#d3dbd5' }, font: '12px Oplogs Sans', size: 52 },
         ],
         series: [
           {},
@@ -54,4 +54,3 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
   }
   return <div className="chart" ref={host} />
 }
-

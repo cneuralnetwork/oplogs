@@ -8,10 +8,19 @@ if (!target) throw new Error('No Chrome page target is available')
 const socket = new WebSocket(target.webSocketDebuggerUrl)
 const pending = new Map()
 const failures = []
+const consoleErrors = []
 let nextId = 1
+let resolveLoad
 
 socket.addEventListener('message', (message) => {
   const packet = JSON.parse(message.data)
+  if (packet.method === 'Page.loadEventFired') resolveLoad?.()
+  if (packet.method === 'Runtime.exceptionThrown') {
+    consoleErrors.push(packet.params?.exceptionDetails?.text ?? 'Uncaught browser exception')
+  }
+  if (packet.method === 'Runtime.consoleAPICalled' && packet.params?.type === 'error') {
+    consoleErrors.push(packet.params.args?.map((argument) => argument.value ?? argument.description).join(' ') ?? 'Console error')
+  }
   if (!packet.id || !pending.has(packet.id)) return
   const { resolve, reject } = pending.get(packet.id)
   pending.delete(packet.id)
@@ -50,8 +59,24 @@ function exactText(selector, text, closest = '') {
 await command('Runtime.enable')
 await command('Page.enable')
 await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
+const loaded = new Promise((resolve) => { resolveLoad = resolve })
 await command('Page.navigate', { url: `${baseUrl}/runs/${runId}` })
-await new Promise((resolve) => setTimeout(resolve, 1200))
+let loadTimer
+await Promise.race([
+  loaded,
+  new Promise((_, reject) => {
+    loadTimer = setTimeout(() => reject(new Error('Page load timed out')), 15_000)
+  }),
+])
+clearTimeout(loadTimer)
+const renderDeadline = Date.now() + 15_000
+while (
+  Date.now() < renderDeadline
+  && !(await evaluate(`[...document.querySelectorAll('[role="tab"]')].some((node) => node.textContent.trim() === 'Overview')`))
+) {
+  await new Promise((resolve) => setTimeout(resolve, 100))
+}
+if (Date.now() >= renderDeadline) throw new Error('Run tabs did not render')
 
 for (const tabName of ['Samples', 'Logs', 'System', 'Traces', 'Files', 'Source', 'Overview']) {
   await click(exactText('[role="tab"]', tabName), `${tabName} tab`)
@@ -71,9 +96,21 @@ for (const tabName of ['Samples', 'Logs', 'System', 'Traces', 'Files', 'Source',
   }
 }
 
-await click(exactText('.sidebar .nav-item', 'Artifacts'), 'Artifacts navigation')
-if (!String(await evaluate('location.pathname')).startsWith('/artifacts')) failures.push('Artifacts navigation did not change route')
-if (!(await evaluate(`document.querySelector('.standard-page h1')?.textContent === 'Artifacts'`))) failures.push('Artifacts view did not render')
+for (const [label, path] of [
+  ['Projects', '/projects'],
+  ['Artifacts', '/artifacts'],
+  ['Sweeps', '/sweeps'],
+  ['Registry', '/registry'],
+  ['Reports', '/reports'],
+  ['Traces', '/traces'],
+  ['Settings', '/settings'],
+]) {
+  await click(exactText('.sidebar .nav-item', label), `${label} navigation`)
+  if (await evaluate('location.pathname') !== path) failures.push(`${label} navigation did not change route`)
+  if (!(await evaluate(`document.querySelector('.standard-page h1')?.textContent === ${JSON.stringify(label)}`))) {
+    failures.push(`${label} view did not render`)
+  }
+}
 
 await click(exactText('.sidebar .nav-item', 'Runs'), 'Runs navigation')
 if (await evaluate(`document.querySelector('.runs-page h1')?.textContent !== 'Runs'`)) failures.push('Runs view did not render')
@@ -84,8 +121,8 @@ const result = {
   failures,
   url: await evaluate('location.href'),
   activeTab: await evaluate(`document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim()`),
-  consoleErrors: await evaluate(`window.__oplogsSmokeErrors || []`),
+  consoleErrors,
 }
 console.log(JSON.stringify(result, null, 2))
 socket.close()
-if (failures.length) process.exitCode = 1
+if (failures.length || consoleErrors.length) process.exitCode = 1

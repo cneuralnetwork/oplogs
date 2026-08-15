@@ -18,13 +18,26 @@ async function filesBelow(directory) {
 }
 
 const files = await filesBelow(siteRoot);
-const htmlFiles = files.filter((file) => file.endsWith(".html") && !file.endsWith("404.html"));
+const allHtmlFiles = files.filter((file) => file.endsWith(".html") && !file.endsWith("404.html"));
+const htmlWithSource = await Promise.all(
+  allHtmlFiles.map(async (file) => ({ file, html: await readFile(file, "utf8") })),
+);
+const redirectFiles = htmlWithSource.filter(({ html }) =>
+  html.includes('name="oplogs-docs-redirect"'),
+);
+const contentFiles = htmlWithSource.filter(({ html }) =>
+  !html.includes('name="oplogs-docs-redirect"'),
+);
 const index = JSON.parse(await readFile(path.join(siteRoot, "search-index.json"), "utf8"));
 const stylesheet = await readFile(path.join(siteRoot, "styles.css"), "utf8");
-const expectedPageCount = 14 + apiSymbols.length + cliCommands.length;
+const expectedPageCount = 14 + apiSymbols.length;
+const expectedRedirectCount = 2 + cliCommands.length;
 
-if (htmlFiles.length !== expectedPageCount) {
-  failures.push(`expected ${expectedPageCount} html pages, found ${htmlFiles.length}`);
+if (contentFiles.length !== expectedPageCount) {
+  failures.push(`expected ${expectedPageCount} content pages, found ${contentFiles.length}`);
+}
+if (redirectFiles.length !== expectedRedirectCount) {
+  failures.push(`expected ${expectedRedirectCount} redirects, found ${redirectFiles.length}`);
 }
 if (index.length !== expectedPageCount) {
   failures.push(`expected ${expectedPageCount} search records, found ${index.length}`);
@@ -54,8 +67,7 @@ function targetPath(rawUrl) {
   return path.join(siteRoot, relative);
 }
 
-for (const file of htmlFiles) {
-  const html = await readFile(file, "utf8");
+for (const { file, html } of contentFiles) {
   const relative = path.relative(siteRoot, file);
   if (!html.includes('<html lang="en"')) failures.push(`${relative}: missing language`);
   if (!html.includes("<main")) failures.push(`${relative}: missing main landmark`);
@@ -99,15 +111,61 @@ for (const required of [
   "data-search",
   "data-theme-toggle",
   "data-menu-toggle",
+  "data-copy-markdown",
   'href="https://github.com/cneuralnetwork/oplogs">GitHub</a>',
+  'href="https://github.com/cneuralnetwork/oplogs/blob/main/docs/overview.md">View Markdown source</a>',
 ]) {
   if (!home.includes(required)) failures.push(`overview: missing ${required}`);
 }
 
-const renderedHtml = await Promise.all(htmlFiles.map((file) => readFile(file, "utf8")));
-for (const removed of ["data-copy-link", "data-journal-lab", "reference-count", "/reference/sdk/", "/benchmark/"]) {
+const renderedHtml = contentFiles.map(({ html }) => html);
+for (const removed of [
+  "data-copy-link",
+  "data-journal-lab",
+  "reference-count",
+  'href="/reference/sdk/"',
+  'href="/benchmark/"',
+]) {
   if (renderedHtml.some((html) => html.includes(removed))) {
     failures.push(`documentation retained removed element ${removed}`);
+  }
+}
+if (renderedHtml.some((html) => html.includes("oplogs-journal-field.webp"))) {
+  failures.push("documentation retained the removed decorative journal artwork");
+}
+
+const authoredSources = [
+  "overview.md",
+  "quickstart.md",
+  "logging.md",
+  "media.md",
+  "frameworks.md",
+  "tracing.md",
+  "dashboard.md",
+  "sweeps.md",
+  "migration.md",
+  "troubleshooting.md",
+  "cnn-example.md",
+  "architecture.md",
+];
+for (const source of authoredSources) {
+  const sourceLink = `https://github.com/cneuralnetwork/oplogs/blob/main/docs/${source}`;
+  const authoredHtml = contentFiles.find(({ html }) => html.includes(`href="${sourceLink}"`))?.html;
+  if (
+    !authoredHtml ||
+    !authoredHtml.includes('class="page-tools"') ||
+    !authoredHtml.includes("data-copy-markdown")
+  ) {
+    failures.push(`docs/${source}: missing Markdown source tools`);
+  }
+}
+for (const source of authoredSources) {
+  const raw = path.join(siteRoot, "raw", "docs", source);
+  try {
+    const markdown = await readFile(raw, "utf8");
+    if (!markdown.startsWith("# ")) failures.push(`raw docs/${source}: missing title`);
+  } catch {
+    failures.push(`raw docs/${source}: missing Markdown source`);
   }
 }
 
@@ -115,6 +173,9 @@ const apiIndex = await readFile(path.join(siteRoot, "reference", "api", "index.h
 const apiEntries = [...apiIndex.matchAll(/class="reference-entry"/g)].length;
 if (apiEntries !== apiSymbols.length) {
   failures.push(`api directory: expected ${apiSymbols.length} entries, found ${apiEntries}`);
+}
+if (!apiIndex.includes('href="https://github.com/cneuralnetwork/oplogs/blob/main/src/oplogs/__init__.py">Source on GitHub</a>')) {
+  failures.push("api directory: missing GitHub source link");
 }
 
 for (const item of apiSymbols) {
@@ -126,17 +187,32 @@ for (const item of apiSymbols) {
 }
 
 const cliIndex = await readFile(path.join(siteRoot, "reference", "cli", "index.html"), "utf8");
-const cliEntries = [...cliIndex.matchAll(/class="reference-entry"/g)].length;
-if (cliEntries !== cliCommands.length) {
-  failures.push(`cli directory: expected ${cliCommands.length} entries, found ${cliEntries}`);
+for (const item of cliCommands) {
+  if (!cliIndex.includes(`id="${item.slug}"`)) {
+    failures.push(`command line: missing anchor for ${item.name}`);
+  }
+  if (!cliIndex.includes(escapeForHtml(item.usage.trim()))) {
+    failures.push(`command line: missing usage for ${item.name}`);
+  }
+  const redirect = await readFile(
+    path.join(siteRoot, "reference", "cli", item.slug, "index.html"),
+    "utf8",
+  );
+  if (!redirect.includes(`${projectBase}reference/cli/#${item.slug}`)) {
+    failures.push(`command line: stale route does not redirect to ${item.slug}`);
+  }
+}
+if (!cliIndex.includes('href="https://github.com/cneuralnetwork/oplogs/blob/main/src/oplogs/cli.py">Source on GitHub</a>')) {
+  failures.push("command line: missing GitHub source link");
 }
 
-for (const item of cliCommands) {
-  const page = await readFile(path.join(siteRoot, "reference", "cli", item.slug, "index.html"), "utf8");
-  const expected = `https://github.com/cneuralnetwork/oplogs/blob/main/${item.source}`;
-  if (!page.includes(`href="${expected}">Source on GitHub</a>`)) {
-    failures.push(`cli ${item.name}: missing GitHub source link ${expected}`);
-  }
+const sdkRedirect = await readFile(path.join(siteRoot, "reference", "sdk", "index.html"), "utf8");
+if (!sdkRedirect.includes(`${projectBase}reference/api/`)) {
+  failures.push("SDK overview: stale route does not redirect to the Python API");
+}
+const benchmarkRedirect = await readFile(path.join(siteRoot, "benchmark", "index.html"), "utf8");
+if (!benchmarkRedirect.includes("https://github.com/cneuralnetwork/oplogs/blob/main/docs/benchmark.md")) {
+  failures.push("benchmark: stale route does not redirect to its repository source");
 }
 
 const packageSource = await readFile(path.resolve("src/oplogs/__init__.py"), "utf8");
@@ -163,15 +239,25 @@ const implementedCommands = [
 ].map((match) => match[1] || match[2].replaceAll("_", "-"));
 const documentedCommands = new Set(cliCommands.map((item) => item.slug));
 for (const name of implementedCommands) {
-  if (!documentedCommands.has(name)) failures.push(`cli directory: missing command ${name}`);
+  if (!documentedCommands.has(name)) failures.push(`command line: missing command ${name}`);
 }
 for (const name of documentedCommands) {
-  if (!implementedCommands.includes(name)) failures.push(`cli directory: unknown command ${name}`);
+  if (!implementedCommands.includes(name)) failures.push(`command line: unknown command ${name}`);
+}
+
+function escapeForHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 if (failures.length) {
   console.error(failures.join("\n"));
   process.exitCode = 1;
 } else {
-  console.log(`checked ${htmlFiles.length} pages, ${index.length} search records, and all local links`);
+  console.log(
+    `checked ${contentFiles.length} pages, ${redirectFiles.length} redirects, ${index.length} search records, and all local links`,
+  );
 }

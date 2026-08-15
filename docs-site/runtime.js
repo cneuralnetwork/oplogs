@@ -1,7 +1,7 @@
 (() => {
   const root = document.documentElement;
   const body = document.body;
-  const themeButton = document.querySelector("[data-theme-toggle]");
+  const themeButtons = [...document.querySelectorAll("[data-theme-toggle]")];
   const menuButton = document.querySelector("[data-menu-toggle]");
   const menuBackdrop = document.querySelector("[data-sidebar-backdrop]");
   const searchInput = document.querySelector("[data-search]");
@@ -10,7 +10,9 @@
 
   function setTheme(theme) {
     root.dataset.theme = theme;
-    if (themeButton) themeButton.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+    themeButtons.forEach((button) => {
+      button.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+    });
     try {
       localStorage.setItem("oplogs-docs-theme", theme);
     } catch (_error) {
@@ -18,12 +20,12 @@
     }
   }
 
-  if (themeButton) {
-    themeButton.textContent = root.dataset.theme === "dark" ? "Light mode" : "Dark mode";
-    themeButton.addEventListener("click", () => {
+  themeButtons.forEach((button) => {
+    button.textContent = root.dataset.theme === "dark" ? "Light mode" : "Dark mode";
+    button.addEventListener("click", () => {
       setTheme(root.dataset.theme === "dark" ? "light" : "dark");
     });
-  }
+  });
 
   function setMenu(open) {
     body.classList.toggle("sidebar-open", open);
@@ -133,14 +135,42 @@
     });
   }
 
+  async function writeClipboard(value) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.className = "clipboard-field";
+    document.body.append(field);
+    field.select();
+    document.execCommand("copy");
+    field.remove();
+  }
+
+  function showCopied(button, restingLabel) {
+    button.textContent = "Copied";
+    window.setTimeout(() => {
+      button.textContent = restingLabel;
+    }, 1200);
+  }
+
   document.querySelectorAll("[data-copy-code]").forEach((button) => {
     button.addEventListener("click", async () => {
       const source = button.closest("[data-code-block]")?.querySelector("code")?.textContent || "";
-      await navigator.clipboard.writeText(source);
-      button.textContent = "copied";
-      window.setTimeout(() => {
-        button.textContent = "copy";
-      }, 1200);
+      await writeClipboard(source);
+      showCopied(button, "copy");
+    });
+  });
+
+  document.querySelectorAll("[data-copy-markdown]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const response = await fetch(button.dataset.copyMarkdown);
+      if (!response.ok) throw new Error(`Markdown source returned ${response.status}`);
+      await writeClipboard(await response.text());
+      showCopied(button, "Copy as Markdown");
     });
   });
 

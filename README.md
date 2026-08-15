@@ -1,13 +1,17 @@
-# oplogs
+<p align="center">
+  <img src="assets/oplogs-banner.png" alt="oplogs" width="560">
+</p>
 
-Documentation: <https://cneuralnetwork.github.io/oplogs-docs/>
+<p align="center">
+  <strong>Local-first experiment tracking for models, agents, and generated media.</strong>
+</p>
 
-oplogs is a local-first experiment tracker for machine learning, generative models,
-LLM applications, and agents. It keeps runs on your workstation, serves the dashboard
-from localhost, and does not require an account, API key, or hosted service.
+<p align="center">
+  <a href="https://cneuralnetwork.github.io/oplogs-docs/">Documentation</a>
+</p>
 
-The repository is MIT licensed. The initial GitHub repository is private while the
-first release is hardened; the code itself contains no hosted dependency.
+oplogs keeps runs on your workstation and serves the dashboard from localhost. It
+requires no account, API key, or hosted service.
 
 ## Start in two lines
 

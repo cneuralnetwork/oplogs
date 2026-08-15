@@ -118,6 +118,7 @@
       })
       .then((index) => {
         searchIndex = index;
+        if (searchInput.value.trim()) renderSearch(searchInput.value);
       })
       .catch(() => {
         searchInput.placeholder = "search unavailable";

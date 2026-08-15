@@ -1,4 +1,4 @@
-"""Import portable W&B run exports into the local OPLOGS model."""
+"""Import portable W&B run exports into the local oplogs model."""
 
 from __future__ import annotations
 

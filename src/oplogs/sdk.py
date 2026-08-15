@@ -244,7 +244,7 @@ class Run:
         timestamp: str | None = None,
     ) -> None:
         if self._finished:
-            raise RuntimeError("cannot log to a finished OPLOGS run")
+            raise RuntimeError("cannot log to a finished oplogs run")
         grouped: dict[str, dict[str, Any]] = {}
         for key, value in values.items():
             kind, normalized = normalize_value(value)

@@ -35,7 +35,7 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
     async def lifespan(_: FastAPI):
         yield
 
-    app = FastAPI(title="OPLOGS", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="oplogs", version="0.1.0", lifespan=lifespan)
 
     async def authorize(x_oplogs_token: str | None = Header(default=None)) -> None:
         if x_oplogs_token != write_token:
@@ -58,7 +58,7 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
             "::1",
             "testserver",
         }:
-            return HTMLResponse("OPLOGS is localhost-only", status_code=403)
+            return HTMLResponse("oplogs is localhost-only", status_code=403)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -78,7 +78,7 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
     @app.get("/api/info")
     async def info() -> dict[str, Any]:
         return {
-            "name": "OPLOGS",
+            "name": "oplogs",
             "version": "0.1.0",
             "local": True,
             "storage": store.storage_usage(),
@@ -330,7 +330,7 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
 
         @app.get("/", response_class=HTMLResponse)
         async def fallback():
-            return "<main style='font:16px system-ui;padding:48px'><h1>OPLOGS</h1><p>Dashboard assets are not built yet.</p></main>"
+            return "<main style='font:16px system-ui;padding:48px'><h1>oplogs</h1><p>dashboard assets are not built yet.</p></main>"
 
     return app
 

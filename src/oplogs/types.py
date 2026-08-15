@@ -183,5 +183,5 @@ def normalize_value(value: Any) -> tuple[str, Any]:
     if hasattr(value, "to_dict") or hasattr(value, "to_dicts"):
         return "table", Table(value).encode()
     raise TypeError(
-        f"unsupported log value {type(value).__name__}; wrap rich values with an OPLOGS type"
+        f"unsupported log value {type(value).__name__}; wrap rich values with an oplogs type"
     )

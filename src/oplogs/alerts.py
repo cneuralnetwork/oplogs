@@ -47,8 +47,8 @@ class AlertEngine:
 
     @staticmethod
     def _deliver(rule: dict[str, Any], run: dict[str, Any], event: Event) -> None:
-        title = f"OPLOGS: {run.get('name', event.run_id)}"
-        message = rule.get("message") or f"Alert matched {event.kind}"
+        title = f"oplogs: {run.get('name', event.run_id)}"
+        message = rule.get("message") or f"alert matched {event.kind}"
         if rule.get("desktop", True) and shutil.which("notify-send"):
             subprocess.run(["notify-send", title, message], check=False, timeout=5)
         command = rule.get("command")

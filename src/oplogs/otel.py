@@ -7,7 +7,7 @@ from typing import Any
 
 
 def enable_otel() -> Any:
-    """Attach an OPLOGS exporter to the current OpenTelemetry tracer provider."""
+    """Attach an oplogs exporter to the current OpenTelemetry tracer provider."""
     try:
         from opentelemetry import trace as otel_trace
         from opentelemetry.sdk.trace.export import (

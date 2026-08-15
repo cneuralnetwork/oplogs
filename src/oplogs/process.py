@@ -69,14 +69,14 @@ def ensure_daemon(open_browser: bool | None = None) -> tuple[DaemonInfo, bool]:
     info: DaemonInfo | None = None
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(f"OPLOGS daemon exited; inspect {log_path}")
+            raise RuntimeError(f"oplogs daemon exited; inspect {log_path}")
         info = read_daemon_info()
         if info and _healthy(info):
             break
         time.sleep(0.1)
     else:
         process.terminate()
-        raise RuntimeError(f"OPLOGS daemon did not start; inspect {log_path}")
+        raise RuntimeError(f"oplogs daemon did not start; inspect {log_path}")
     should_open = open_browser is not False and bool(
         os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     )

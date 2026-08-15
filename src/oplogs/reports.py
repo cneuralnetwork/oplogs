@@ -16,7 +16,7 @@ def render_report(report: dict[str, Any], destination: str | Path) -> Path:
     blocks = "\n".join(_render_block(block) for block in report.get("blocks", []))
     document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>{html.escape(report.get("title", "OPLOGS report"))}</title>
+<title>{html.escape(report.get("title", "oplogs report"))}</title>
 <style>
 @page{{size:A4;margin:18mm 15mm}}
 :root{{color-scheme:light;--ink:#151816;--quiet:#667069;--line:#dfe6e1;--green:#215c3a}}
@@ -27,8 +27,8 @@ p{{max-width:72ch}}pre,table,.metric{{border:1px solid var(--line);border-radius
 table{{width:100%;border-collapse:collapse}}th,td{{padding:10px;text-align:left;border-bottom:1px solid var(--line)}}
 .metric strong{{font-size:34px;display:block}}.quiet{{color:var(--quiet)}}img,video{{max-width:100%;height:auto;border-radius:8px}}
 @media print{{main{{max-width:none;padding:0}}header{{margin-bottom:36px}}}}
-</style></head><body><main><header><div class="quiet">OPLOGS local report</div>
-<h1>{html.escape(report.get("title", "Untitled report"))}</h1></header>{blocks}</main></body></html>"""
+</style></head><body><main><header><div class="quiet">oplogs local report</div>
+<h1>{html.escape(report.get("title", "untitled report"))}</h1></header>{blocks}</main></body></html>"""
     target.write_text(document, encoding="utf-8")
     return target
 
@@ -57,7 +57,7 @@ def _render_block(block: dict[str, Any]) -> str:
         return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
     if kind == "media" and block.get("src"):
         source = html.escape(str(block["src"]), quote=True)
-        return f"<figure><img src='{source}' alt='{html.escape(str(block.get('alt', 'Experiment output')), quote=True)}'></figure>"
+        return f"<figure><img src='{source}' alt='{html.escape(str(block.get('alt', 'experiment output')), quote=True)}'></figure>"
     return f"<pre>{html.escape(json.dumps(block, indent=2, default=str))}</pre>"
 
 

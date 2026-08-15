@@ -1,6 +1,6 @@
-# OPLOGS
+# oplogs
 
-OPLOGS is a local-first experiment tracker for machine learning, generative models,
+oplogs is a local-first experiment tracker for machine learning, generative models,
 LLM applications, and agents. It keeps runs on your workstation, serves the dashboard
 from localhost, and does not require an account, API key, or hosted service.
 
@@ -60,6 +60,30 @@ uv pip install --python .venv/bin/python torch \
 
 The script prints the exact localhost run URL when training finishes.
 
+### Tiny GPU run under a 500 MB VRAM ceiling
+
+`examples/tiny_gpu_cnn.py` is the CUDA-first dashboard demo. The model has only
+1,122 trainable parameters and learns from generated 28 x 28 stripe images. It opens
+the exact run page immediately, logs live batch and epoch metrics, sampled gradients,
+process VRAM, predictions, sample images, and a reloadable checkpoint.
+
+The default run caps PyTorch's caching allocator at 96 MiB. It also checks this
+Python process through `nvidia-smi` during training and fails closed if measured
+process VRAM exceeds 500 MiB. CUDA context memory varies by driver, so the script
+verifies the real process total instead of claiming that tensor allocation is the
+whole VRAM footprint.
+
+Install a CUDA-enabled PyTorch build appropriate for your machine, then run:
+
+```bash
+.venv/bin/python examples/tiny_gpu_cnn.py
+```
+
+The generated checkpoint and sample grid are retained under
+`./oplogs-cnn-output/<run-id>/`. Use `--no-open-dashboard` if you only want the URL
+printed, or change the guard explicitly with `--vram-limit-mb` and
+`--allocator-limit-mb`.
+
 ## Framework and agent support
 
 Autologging is enabled by default and activates only when a supported library is
@@ -76,7 +100,7 @@ imported:
 - OpenTelemetry spans through `oplogs.enable_otel()` when `oplogs[otel]` is installed
 
 Framework wrappers resolve the active run at call time, so sequential runs in one
-Python process do not leak telemetry into a finished run. OPLOGS never invents a loss
+Python process do not leak telemetry into a finished run. oplogs never invents a loss
 or score that the framework does not expose. Use `run.log` for task-specific metrics.
 
 Functions and agent operations can be traced directly:
@@ -134,7 +158,7 @@ parameters:
 oplogs sweep sweep.yaml python train.py
 ```
 
-Each trial is an isolated subprocess. OPLOGS injects the selected configuration,
+Each trial is an isolated subprocess. oplogs injects the selected configuration,
 sweep ID, trial index, and optional GPU assignment into the child environment. Grid
 and random trials can run concurrently. Bayesian sweeps use real Optuna TPE `ask` and
 `tell` batches and read the configured objective from the retained run summary.
@@ -149,7 +173,7 @@ oplogs import-wandb ./wandb/run-20260815 --project migrated
 ```
 
 The importer preserves config, numeric history, summary values, tags, and files under
-the run's `files` tree. Imported media is immediately visible in Samples and Artifacts.
+the run's `files` tree. Imported media is immediately visible in samples and artifacts.
 
 ## Local security and durability
 

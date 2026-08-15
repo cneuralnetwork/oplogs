@@ -21,7 +21,7 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
         return allSteps.map((step) => lookup.get(step) ?? null)
       }),
     ]
-    const palette = ['#315b42', '#6f8976', '#8b5c4e', '#566258', '#82704b']
+    const palette = ['#6874ed', '#ee7651', '#36af80', '#a973ce', '#d79a46']
     const plot = new uPlot(
       {
         width: host.current.clientWidth,
@@ -30,12 +30,12 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
         legend: { show: !compact },
         scales: { x: { time: false } },
         axes: [
-          { stroke: '#646d65', grid: { stroke: '#e7ece8', width: 1 }, ticks: { stroke: '#d3dbd5' }, font: '12px Oplogs Sans' },
-          { stroke: '#646d65', grid: { stroke: '#e7ece8', width: 1 }, ticks: { stroke: '#d3dbd5' }, font: '12px Oplogs Sans', size: 52 },
+          { stroke: '#92949d', grid: { stroke: '#eceef2', width: 1 }, ticks: { stroke: '#dfe1e6' }, font: '11px oplogs sans' },
+          { stroke: '#92949d', grid: { stroke: '#eceef2', width: 1 }, ticks: { stroke: '#dfe1e6' }, font: '11px oplogs sans', size: 52 },
         ],
         series: [
-          {},
-          ...series.map((item, index) => ({ label: item.label, stroke: item.color ?? palette[index % palette.length], width: 2, points: { show: false }, spanGaps: true })),
+          { label: 'value' },
+          ...series.map((item, index) => ({ label: item.label, stroke: item.color ?? palette[index % palette.length], width: 2.4, points: { show: false }, spanGaps: true })),
         ],
       },
       data,
@@ -50,7 +50,7 @@ export function LineChart({ series, height = 280, compact = false }: LineChartPr
   }, [compact, height, series])
 
   if (series.length === 0 || series.every((item) => item.points.length === 0)) {
-    return <div className="chart-empty">No numeric history has arrived yet.</div>
+    return <div className="chart-empty">no numeric history has arrived yet.</div>
   }
   return <div className="chart" ref={host} />
 }

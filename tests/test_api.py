@@ -14,6 +14,7 @@ async def test_full_ingestion_and_query_flow(store: Storage) -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         assert (await client.get("/health")).json()["status"] == "ok"
         info = (await client.get("/api/info")).json()
+        assert info["name"] == "oplogs"
         assert info["write_token"] == "secret"
 
         response = await client.post(

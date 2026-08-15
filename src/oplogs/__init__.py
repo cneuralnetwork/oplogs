@@ -1,4 +1,4 @@
-"""Public OPLOGS SDK surface."""
+"""Public oplogs SDK surface."""
 
 from .otel import enable_otel
 from .sdk import Run, init

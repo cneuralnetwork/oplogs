@@ -1,4 +1,4 @@
-"""Train a real PyTorch CNN and retain the complete run in OPLOGS.
+"""Train a real PyTorch CNN and retain the complete run in oplogs.
 
 Install the optional demo dependency with:
 
@@ -240,7 +240,7 @@ def train(args: argparse.Namespace) -> dict[str, object]:
             "checkpoint": str(checkpoint_path),
         }
         print(f"completed: validation_accuracy={result['validation_accuracy']:.3f}")
-        print(f"OPLOGS run: {run.url}")
+        print(f"oplogs run: {run.url}")
         return result
 
 

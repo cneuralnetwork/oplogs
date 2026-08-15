@@ -72,24 +72,24 @@ clearTimeout(loadTimer)
 const renderDeadline = Date.now() + 15_000
 while (
   Date.now() < renderDeadline
-  && !(await evaluate(`[...document.querySelectorAll('[role="tab"]')].some((node) => node.textContent.trim() === 'Overview')`))
+  && !(await evaluate(`[...document.querySelectorAll('[role="tab"]')].some((node) => node.textContent.trim() === 'overview')`))
 ) {
   await new Promise((resolve) => setTimeout(resolve, 100))
 }
 if (Date.now() >= renderDeadline) throw new Error('Run tabs did not render')
 
-for (const tabName of ['Samples', 'Logs', 'System', 'Traces', 'Files', 'Source', 'Overview']) {
+for (const tabName of ['samples', 'logs', 'system', 'traces', 'files', 'source', 'overview']) {
   await click(exactText('[role="tab"]', tabName), `${tabName} tab`)
   const selected = await evaluate(`document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim()`)
   if (selected !== tabName) failures.push(`${tabName} tab did not activate`)
   const expected = {
-    Samples: '.media-grid img, .rich-samples article',
-    Logs: '.console code',
-    System: '.chart, .chart-empty',
-    Traces: '.trace-list article, .tab-empty',
-    Files: '.data-table tbody tr',
-    Source: '.source-view pre',
-    Overview: '.chart-panel',
+    samples: '.media-grid img, .rich-samples article',
+    logs: '.console code',
+    system: '.chart, .chart-empty',
+    traces: '.trace-list article, .tab-empty',
+    files: '.data-table tbody tr',
+    source: '.source-view pre',
+    overview: '.chart-panel',
   }[tabName]
   if (!(await evaluate(`Boolean(document.querySelector(${JSON.stringify(expected)}))`))) {
     failures.push(`${tabName} content did not render`)
@@ -97,13 +97,13 @@ for (const tabName of ['Samples', 'Logs', 'System', 'Traces', 'Files', 'Source',
 }
 
 for (const [label, path] of [
-  ['Projects', '/projects'],
-  ['Artifacts', '/artifacts'],
-  ['Sweeps', '/sweeps'],
-  ['Registry', '/registry'],
-  ['Reports', '/reports'],
-  ['Traces', '/traces'],
-  ['Settings', '/settings'],
+  ['projects', '/projects'],
+  ['artifacts', '/artifacts'],
+  ['sweeps', '/sweeps'],
+  ['registry', '/registry'],
+  ['reports', '/reports'],
+  ['traces', '/traces'],
+  ['settings', '/settings'],
 ]) {
   await click(exactText('.sidebar .nav-item', label), `${label} navigation`)
   if (await evaluate('location.pathname') !== path) failures.push(`${label} navigation did not change route`)
@@ -112,8 +112,12 @@ for (const [label, path] of [
   }
 }
 
-await click(exactText('.sidebar .nav-item', 'Runs'), 'Runs navigation')
-if (await evaluate(`document.querySelector('.runs-page h1')?.textContent !== 'Runs'`)) failures.push('Runs view did not render')
+await click(exactText('.sidebar .nav-item', 'runs'), 'runs navigation')
+if (await evaluate(`document.querySelector('.runs-page h1')?.textContent !== 'runs'`)) failures.push('runs view did not render')
+await click(`document.querySelector('.command-search input')`, 'command search')
+await command('Input.insertText', { text: runId })
+await new Promise((resolve) => setTimeout(resolve, 180))
+if (await evaluate(`document.querySelectorAll('.data-table tbody tr').length`) !== 1) failures.push('command search did not filter runs')
 await click(exactText('.data-table strong', runName, 'tr'), 'run table row')
 if (!(await evaluate(`location.pathname.includes(${JSON.stringify(runId)})`))) failures.push('Run row did not open')
 

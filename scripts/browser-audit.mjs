@@ -82,7 +82,7 @@ do {
 await evaluate('scrollTo(0, 0)')
 state.scrollY = await evaluate('scrollY')
 if (selectedTab) {
-  const tabRect = await evaluate(`(() => { const node = [...document.querySelectorAll('[role="tab"]')].find((item) => item.textContent.trim() === ${JSON.stringify(selectedTab)}); if (!node) return null; const box = node.getBoundingClientRect(); return {x: box.x + box.width / 2, y: box.y + box.height / 2}; })()`)
+  const tabRect = await evaluate(`(() => { const node = [...document.querySelectorAll('[role="tab"]')].find((item) => item.textContent.trim().toLowerCase() === ${JSON.stringify(selectedTab?.toLowerCase())}); if (!node) return null; const box = node.getBoundingClientRect(); return {x: box.x + box.width / 2, y: box.y + box.height / 2}; })()`)
   if (!tabRect) throw new Error(`Tab not found: ${selectedTab}`)
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', x: tabRect.x, y: tabRect.y, button: 'left', clickCount: 1 })
   await command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: tabRect.x, y: tabRect.y, button: 'left', clickCount: 1 })

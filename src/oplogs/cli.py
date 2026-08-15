@@ -1,4 +1,4 @@
-"""Human-readable OPLOGS command line interface."""
+"""Human-readable oplogs command line interface."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def open(run_id: str | None = typer.Argument(default=None)) -> None:
 @app.command()
 def stop() -> None:
     """Stop the persistent local daemon without deleting data."""
-    typer.echo("Stopped OPLOGS." if stop_daemon() else "OPLOGS is not running.")
+    typer.echo("stopped oplogs." if stop_daemon() else "oplogs is not running.")
 
 
 @app.command()
@@ -46,17 +46,17 @@ def doctor() -> None:
         with suppress(httpx.HTTPError):
             healthy = httpx.get(f"{daemon.url}/health", timeout=1).status_code == 200
     storage = Storage().storage_usage()
-    typer.echo("OPLOGS doctor")
+    typer.echo("oplogs doctor")
     typer.echo(f"  daemon: {'healthy' if healthy else 'stopped'}")
     typer.echo(f"  data:   {storage['root']}")
     typer.echo(f"  runs:   {storage['runs']}")
-    typer.echo(f"  size:   {storage['bytes'] / 1024**2:.2f} MiB")
+    typer.echo(f"  size:   {storage['bytes'] / 1024**2:.2f} mib")
     typer.echo(f"  python: {sys.version.split()[0]}")
 
 
 @app.command("storage")
 def storage_command() -> None:
-    """Show retained local data usage. OPLOGS never auto-deletes runs."""
+    """Show retained local data usage. oplogs never auto-deletes runs."""
     value = Storage().storage_usage()
     typer.echo(json.dumps(value, indent=2))
 
@@ -110,7 +110,7 @@ def server(port: int = typer.Option(default=7437)) -> None:
 
 @app.command("export")
 def export_data(destination: Path, run_id: str | None = None) -> None:
-    """Export OPLOGS data as a portable directory."""
+    """Export oplogs data as a portable directory."""
     import shutil
 
     source = data_dir() / "runs" / run_id if run_id else data_dir()

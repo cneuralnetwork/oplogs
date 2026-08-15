@@ -11,14 +11,15 @@ describe('Shell', () => {
     const navigate = vi.fn()
     render(
       <Shell currentPath="/runs/example" navigate={navigate}>
-        <p>Run content</p>
+        <p>run content</p>
       </Shell>,
     )
 
-    expect(screen.getByRole('button', { name: 'Runs' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'oplogs home' })).toHaveTextContent('oplogs')
+    expect(screen.getByRole('button', { name: 'runs' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'settings' })).not.toHaveAttribute('aria-current')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Artifacts' }))
+    fireEvent.click(screen.getByRole('button', { name: 'artifacts' }))
     expect(navigate).toHaveBeenCalledWith('/artifacts')
   })
 })

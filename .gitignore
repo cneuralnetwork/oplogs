@@ -10,8 +10,8 @@ htmlcov/
 dist/
 build/
 web/node_modules/
+docs-site/_site/
 web/dist/
 .oplogs/
 *.log
 .DS_Store
-

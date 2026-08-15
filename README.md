@@ -1,5 +1,7 @@
 # oplogs
 
+Documentation: <https://cneuralnetwork.github.io/oplogs-docs/>
+
 oplogs is a local-first experiment tracker for machine learning, generative models,
 LLM applications, and agents. It keeps runs on your workstation, serves the dashboard
 from localhost, and does not require an account, API key, or hosted service.

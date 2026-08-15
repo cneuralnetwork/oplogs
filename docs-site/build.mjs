@@ -126,10 +126,10 @@ function apiReferencePage(item) {
       <div class="symbol-meta"><span>${escapeHtml(item.kind)}</span><span>public in v0.1.0</span><span>${escapeHtml(item.source)}</span></div>
       <h2 id="signature">signature</h2>
       ${code("python", item.signature, item.kind)}
-      ${parameters}
-      ${returns}
-      ${renderReferenceSections(item.sections)}
-      ${relatedReferences(item.related, apiBySlug, "reference/api")}
+${parameters}
+${returns}
+${renderReferenceSections(item.sections)}
+${relatedReferences(item.related, apiBySlug, "reference/api")}
     </div>`,
   };
 }
@@ -152,9 +152,9 @@ function cliReferencePage(item) {
       <div class="symbol-meta"><span>command</span><span>public in v0.1.0</span><span>${escapeHtml(item.source)}</span></div>
       <h2 id="usage">usage</h2>
       ${code("bash", item.usage, "shell")}
-      ${inputs}
-      ${renderReferenceSections(item.sections)}
-      ${relatedReferences(
+${inputs}
+${renderReferenceSections(item.sections)}
+${relatedReferences(
         related.map((candidate) => candidate.slug),
         cliBySlug,
         "reference/cli",

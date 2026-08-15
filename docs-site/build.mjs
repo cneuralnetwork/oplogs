@@ -665,6 +665,10 @@ function renderRedirect(target) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="oplogs-docs-redirect" content="true"><meta http-equiv="refresh" content="0;url=${escapeHtml(target)}"><meta name="robots" content="noindex"><title>Redirecting · oplogs</title></head><body><script>location.replace(${JSON.stringify(target)})</script><a href="${escapeHtml(target)}">Continue to the current documentation</a></body></html>`;
 }
 
+function normalizeGenerated(value) {
+  return value.replace(/[ \t]+$/gm, "");
+}
+
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(path.join(outputRoot, "assets"), { recursive: true });
 await mkdir(path.join(outputRoot, "fonts"), { recursive: true });
@@ -684,7 +688,7 @@ for (const page of authoredPages) {
 for (const [index, page] of pages.entries()) {
   const destination = page.slug ? path.join(outputRoot, page.slug) : outputRoot;
   await mkdir(destination, { recursive: true });
-  await writeFile(path.join(destination, "index.html"), render(page, index));
+  await writeFile(path.join(destination, "index.html"), normalizeGenerated(render(page, index)));
 }
 
 const redirects = [
@@ -695,7 +699,7 @@ const redirects = [
 for (const [slug, target] of redirects) {
   const destination = path.join(outputRoot, slug);
   await mkdir(destination, { recursive: true });
-  await writeFile(path.join(destination, "index.html"), renderRedirect(target));
+  await writeFile(path.join(destination, "index.html"), normalizeGenerated(renderRedirect(target)));
 }
 
 await writeFile(

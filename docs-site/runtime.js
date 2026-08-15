@@ -145,8 +145,8 @@
   });
 
   document.querySelector("[data-copy-link]")?.addEventListener("click", async (event) => {
-    await navigator.clipboard.writeText(window.location.href);
     const button = event.currentTarget;
+    await navigator.clipboard.writeText(window.location.href);
     button.textContent = "link copied";
     window.setTimeout(() => {
       button.textContent = "copy page link";

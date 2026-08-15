@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { apiSymbols, cliCommands } from "./reference-data.mjs";
+
 const sourceRoot = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(sourceRoot, "..");
 const requestedOutput = process.argv[2] || path.join(sourceRoot, "_site");
@@ -63,6 +65,146 @@ function manualLink(slug, number, title, body) {
   return `<a class="manual-link" href="${route(slug)}"><span>${escapeHtml(number)}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(body)}</small></a>`;
 }
 
+function dataTable(columns, rows) {
+  return `<div class="table-scroll" data-columns="${columns.length}"><table><thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${rows
+    .map(
+      (row) =>
+        `<tr>${row
+          .map(
+            (value, index) =>
+              `<td data-label="${escapeHtml(columns[index])}">${index === 0 ? `<code>${escapeHtml(value)}</code>` : escapeHtml(value)}</td>`,
+          )
+          .join("")}</tr>`,
+    )
+    .join("")}</tbody></table></div>`;
+}
+
+function renderReferenceSections(sections = []) {
+  return sections
+    .map((section) => {
+      const paragraphs = (section.paragraphs || []).map((value) => `<p>${value}</p>`).join("");
+      const table = section.table ? dataTable(section.table.columns, section.table.rows) : "";
+      const snippet = section.code
+        ? code(section.code.language, section.code.source, section.code.label || section.code.language)
+        : "";
+      return `<h2 id="${escapeHtml(section.id)}">${escapeHtml(section.title)}</h2>${paragraphs}${table}${snippet}`;
+    })
+    .join("");
+}
+
+function relatedReferences(items, lookup, baseSlug) {
+  if (!items?.length) return "";
+  return `<h2 id="related">related</h2><div class="related-reference">${items
+    .map((slug) => {
+      const target = lookup.get(slug);
+      if (!target) throw new Error(`reference links to missing entry: ${slug}`);
+      return `<a href="${route(`${baseSlug}/${target.slug}`)}"><code>${escapeHtml(target.name)}</code><span>${escapeHtml(target.summary)}</span></a>`;
+    })
+    .join("")}</div>`;
+}
+
+const apiBySlug = new Map(apiSymbols.map((item) => [item.slug, item]));
+const cliBySlug = new Map(cliCommands.map((item) => [item.slug, item]));
+
+function apiReferencePage(item) {
+  const parameters = item.parameters?.length
+    ? `<h2 id="parameters">parameters</h2>${dataTable(
+        ["parameter", "type", "default", "description"],
+        item.parameters,
+      )}`
+    : "";
+  const returns = item.returns
+    ? `<h2 id="returns">returns</h2>${dataTable(["type", "description"], [item.returns])}`
+    : "";
+  return {
+    slug: `reference/api/${item.slug}`,
+    title: item.name,
+    description: item.summary,
+    body: `<div class="symbol-page">
+      <h1 class="symbol-title"><code>${escapeHtml(item.name)}</code></h1>
+      <p class="lead">${escapeHtml(item.summary)}</p>
+      <div class="symbol-meta"><span>${escapeHtml(item.kind)}</span><span>public in v0.1.0</span><span>${escapeHtml(item.source)}</span></div>
+      <h2 id="signature">signature</h2>
+      ${code("python", item.signature, item.kind)}
+      ${parameters}
+      ${returns}
+      ${renderReferenceSections(item.sections)}
+      ${relatedReferences(item.related, apiBySlug, "reference/api")}
+    </div>`,
+  };
+}
+
+function cliReferencePage(item) {
+  const inputs = item.inputs.length
+    ? `<h2 id="arguments-and-options">arguments and options</h2>${dataTable(
+        ["name", "kind", "default", "description"],
+        item.inputs,
+      )}`
+    : "";
+  const related = cliCommands.filter((candidate) => candidate.slug !== item.slug).slice(0, 3);
+  return {
+    slug: `reference/cli/${item.slug}`,
+    title: item.name,
+    description: item.summary,
+    body: `<div class="symbol-page command-page">
+      <h1 class="symbol-title"><code>${escapeHtml(item.name)}</code></h1>
+      <p class="lead">${escapeHtml(item.summary)}</p>
+      <div class="symbol-meta"><span>command</span><span>public in v0.1.0</span><span>${escapeHtml(item.source)}</span></div>
+      <h2 id="usage">usage</h2>
+      ${code("bash", item.usage, "shell")}
+      ${inputs}
+      ${renderReferenceSections(item.sections)}
+      ${relatedReferences(
+        related.map((candidate) => candidate.slug),
+        cliBySlug,
+        "reference/cli",
+      )}
+    </div>`,
+  };
+}
+
+function referenceDirectory(items, baseSlug) {
+  const grouped = new Map();
+  for (const item of items) {
+    const group = item.group || "commands";
+    if (!grouped.has(group)) grouped.set(group, []);
+    grouped.get(group).push(item);
+  }
+  return `<div class="reference-directory">${[...grouped.entries()]
+    .map(
+      ([group, entries]) => `<section class="reference-cluster">
+        <h2 id="${group.replace(/[^a-z0-9]+/g, "-")}">${escapeHtml(group)}</h2>
+        <div>${entries
+          .map(
+            (item, index) => `<a class="reference-entry" href="${route(`${baseSlug}/${item.slug}`)}">
+              <span>${String(index + 1).padStart(2, "0")}</span>
+              <strong><code>${escapeHtml(item.name)}</code></strong>
+              <small>${escapeHtml(item.summary)}</small>
+              <b>${escapeHtml(item.kind || "command")}</b>
+            </a>`,
+          )
+          .join("")}</div>
+      </section>`,
+    )
+    .join("")}</div>`;
+}
+
+const apiIndexPage = {
+  slug: "reference/api",
+  title: "api directory",
+  description: "Complete symbol-by-symbol reference for the public oplogs Python API.",
+  body: `
+    <h1>api directory</h1>
+    <p class="lead">Every stable symbol exported from <code>oplogs</code>, plus the three public <code>Run</code> operations used during an experiment. Signatures and defaults match version 0.1.0.</p>
+    <div class="reference-count" aria-label="API reference scope"><strong>${apiSymbols.length}</strong><span>documented entries</span><span>13 package exports</span><span>3 run methods</span></div>
+    ${referenceDirectory(apiSymbols, "reference/api")}
+    ${note("version boundary", "<p>The directory covers the package-root surface in <code>oplogs.__all__</code> and the public methods on <code>Run</code>. Internal storage, daemon, capture, and normalization helpers are not compatibility promises.</p>")}
+  `,
+};
+
+const apiReferencePages = apiSymbols.map(apiReferencePage);
+const cliReferencePages = cliCommands.map(cliReferencePage);
+
 const groups = [
   {
     title: "start",
@@ -93,7 +235,8 @@ const groups = [
   {
     title: "reference",
     pages: [
-      ["reference/sdk", "python sdk"],
+      ["reference/sdk", "sdk overview"],
+      ["reference/api", "api directory"],
       ["reference/cli", "command line"],
       ["architecture", "architecture"],
       ["benchmark", "ingestion benchmark"],
@@ -492,85 +635,42 @@ oplogs storage`)}
   },
   {
     slug: "reference/sdk",
-    title: "python sdk",
-    description: "Public Python surface for runs, rich values, tracing, and OpenTelemetry.",
+    title: "sdk overview",
+    description: "Orientation to the public oplogs Python SDK and its complete API directory.",
     body: `
-      <h1>python sdk</h1>
-      <p class="lead">The public surface is exported from <code>oplogs</code>. Import from the package root unless you are extending oplogs itself.</p>
-      <h2 id="init"><code>oplogs.init</code></h2>
-      ${code("python", `oplogs.init(
-    project="uncategorized",
-    *,
-    name=None,
-    config=None,
-    tags=None,
-    resume="auto",
-    autolog=True,
-    open=None,
-    capture_console=True,
-    capture_source=True,
-) -> Run`)}
-      <p>Starts or discovers the local daemon, creates a run record, installs the requested capture surfaces, and returns a live <code>Run</code>.</p>
-      <h2 id="run-log"><code>Run.log</code></h2>
-      ${code("python", `run.log(
-    values: dict[str, object],
-    *,
-    step: int | float | None = None,
-    timestamp: str | None = None,
-) -> None`)}
-      <p>Normalizes each value by type, groups compatible values into events, redacts recursively, and enqueues the sealed events.</p>
-      <h2 id="run-watch"><code>Run.watch</code></h2>
-      ${code("python", `run.watch(model, *, gradients=True, every=100) -> None`)}
-      <p>Records PyTorch model identity and parameter counts, then optionally samples parameter gradients.</p>
-      <h2 id="run-finish"><code>Run.finish</code></h2>
-      ${code("python", `run.finish(state: str | None = None) -> None`)}
-      <p>Stops telemetry, restores console hooks, sends the final lifecycle event, flushes the queue, and closes the run. Repeated calls are safe.</p>
-      <h2 id="value-types">value types</h2>
-      <table><thead><tr><th>type</th><th>purpose</th></tr></thead><tbody>
-        <tr><td><code>Image</code></td><td>path, Pillow image, or array with an optional caption</td></tr>
-        <tr><td><code>Audio</code>, <code>Video</code></td><td>playable file plus optional caption</td></tr>
-        <tr><td><code>Table</code></td><td>records, pandas frame, or Polars frame</td></tr>
-        <tr><td><code>Json</code></td><td>explicit structured value</td></tr>
-        <tr><td><code>Histogram</code></td><td>numeric values reduced into declared bins</td></tr>
-        <tr><td><code>File</code></td><td>ordinary retained file</td></tr>
-        <tr><td><code>Artifact</code></td><td>typed file with aliases and metadata</td></tr>
+      <h1>sdk overview</h1>
+      <p class="lead">Import the supported SDK from the package root. The complete API directory gives every exported symbol and public run method its own source-checked page.</p>
+      <a class="reference-gateway" href="${route("reference/api")}"><strong>open the api directory</strong><span>${apiSymbols.length} entries · signatures · defaults · errors · examples</span></a>
+      <h2 id="minimal-surface">minimal surface</h2>
+      ${code("python", `import oplogs
+
+with oplogs.init(project="vision") as run:
+    run.log({"train/loss": 0.184}, step=400)`)}
+      <p><code>oplogs.init</code> returns a <code>Run</code>. <code>Run.log</code> accepts ordinary scalar and structured values plus explicit rich-value wrappers. The context manager finishes the run.</p>
+      <h2 id="public-groups">public groups</h2>
+      <table><thead><tr><th>group</th><th>entries</th><th>use</th></tr></thead><tbody>
+        <tr><td>run lifecycle</td><td><code>init</code>, <code>Run</code>, <code>Run.finish</code></td><td>create, identify, and close a run</td></tr>
+        <tr><td>logging and tracing</td><td><code>Run.log</code>, <code>Run.watch</code>, <code>trace</code>, <code>enable_otel</code>, <code>sweep_config</code></td><td>record semantic values, models, spans, and trial parameters</td></tr>
+        <tr><td>rich values</td><td><code>File</code>, <code>Artifact</code>, <code>Image</code>, <code>Audio</code>, <code>Video</code>, <code>Table</code>, <code>Json</code>, <code>Histogram</code></td><td>retain files and dashboard-rendered samples</td></tr>
       </tbody></table>
-      <h2 id="tracing"><code>trace</code> and <code>enable_otel</code></h2>
-      <p><code>oplogs.trace</code> decorates synchronous or asynchronous functions. <code>oplogs.enable_otel</code> installs the optional OpenTelemetry bridge.</p>
+      ${note("import boundary", "<p>Use <code>import oplogs</code> for application code. Modules such as <code>oplogs.storage</code>, <code>oplogs.daemon</code>, and <code>oplogs.capture</code> are implementation surfaces, not stable public API.</p>")}
     `,
   },
+  apiIndexPage,
+  ...apiReferencePages,
   {
     slug: "reference/cli",
     title: "command line",
-    description: "Command reference for opening, diagnosing, moving, and repairing local oplogs data.",
+    description: "Complete command directory for opening, diagnosing, moving, repairing, and automating oplogs.",
     body: `
       <h1>command line</h1>
-      <p class="lead">The cli is intentionally small. It operates on the same local data root and daemon used by the sdk.</p>
-      <h2 id="commands">commands</h2>
-      <table><thead><tr><th>command</th><th>effect</th></tr></thead><tbody>
-        <tr><td><code>oplogs open [RUN_ID]</code></td><td>open the dashboard or one run</td></tr>
-        <tr><td><code>oplogs stop</code></td><td>stop the daemon without deleting data</td></tr>
-        <tr><td><code>oplogs doctor</code></td><td>inspect daemon, storage, and Python readiness</td></tr>
-        <tr><td><code>oplogs storage</code></td><td>print retained data usage as json</td></tr>
-        <tr><td><code>oplogs rebuild</code></td><td>recreate indexes from canonical journals</td></tr>
-        <tr><td><code>oplogs export DEST [--run-id ID]</code></td><td>copy the full store or one run</td></tr>
-        <tr><td><code>oplogs import-wandb SOURCE</code></td><td>import a portable W&amp;B export</td></tr>
-        <tr><td><code>oplogs sweep CONFIG COMMAND...</code></td><td>run an isolated local sweep</td></tr>
-        <tr><td><code>oplogs report-export ID DEST</code></td><td>write self-contained html or pdf</td></tr>
-      </tbody></table>
-      <h2 id="alerts">alerts</h2>
-      ${code("bash", `oplogs alert --event exception
-oplogs alert \\
-  --metric validation/loss \\
-  --operator '>' \\
-  --threshold 1.0 \\
-  --message 'validation loss exceeded the local guard'`)}
-      <p>Rules can target desktop notifications, a local command, or an explicit webhook.</p>
-      <h2 id="foreground-server">foreground server</h2>
-      ${code("bash", `oplogs server --port 7437`)}
-      <p>This development command runs the daemon in the foreground with a fresh capability token.</p>
+      <p class="lead">All 11 commands operate on the same local data root and daemon as the Python SDK. Open a command for exact arguments, options, defaults, output, and failure boundaries.</p>
+      <div class="reference-count" aria-label="CLI reference scope"><strong>${cliCommands.length}</strong><span>documented commands</span><span>Typer help verified</span><span>version 0.1.0</span></div>
+      ${referenceDirectory(cliCommands, "reference/cli")}
+      ${note("data root", "<p>Commands resolve the same <code>OPLOGS_HOME</code> override as the SDK. Destructive retention commands are deliberately absent; <code>oplogs stop</code> stops the process but keeps data.</p>")}
     `,
   },
+  ...cliReferencePages,
   {
     slug: "architecture",
     title: "architecture",
@@ -629,6 +729,7 @@ journal_mib=33.72`, "development workstation · 2026-08-15")}
 ];
 
 const pageBySlug = new Map(pages.map((page) => [page.slug, page]));
+if (pageBySlug.size !== pages.length) throw new Error("documentation contains duplicate routes");
 for (const group of groups) {
   for (const [slug] of group.pages) {
     if (!pageBySlug.has(slug)) throw new Error(`navigation references missing page: ${slug}`);
@@ -657,7 +758,20 @@ function tableOfContents(body) {
 }
 
 function navigation(current) {
-  return groups
+  const contextualGroups = [...groups];
+  if (current === "reference/api" || current.startsWith("reference/api/")) {
+    contextualGroups.push({
+      title: "python api",
+      pages: apiSymbols.map((item) => [`reference/api/${item.slug}`, item.name]),
+    });
+  }
+  if (current === "reference/cli" || current.startsWith("reference/cli/")) {
+    contextualGroups.push({
+      title: "cli commands",
+      pages: cliCommands.map((item) => [`reference/cli/${item.slug}`, item.name]),
+    });
+  }
+  return contextualGroups
     .map(
       (group) => `<section class="nav-group"><h2>${escapeHtml(group.title)}</h2><ul>${group.pages
         .map(([slug, label]) => `<li><a href="${route(slug)}"${slug === current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</a></li>`)

@@ -1,4 +1,5 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -15,6 +16,13 @@ const sourceUrl =
 const pageSourceBase =
   process.env.OPLOGS_PAGE_SOURCE_BASE ||
   "https://github.com/cneuralnetwork/oplogs/blob/main/docs-site/build.mjs";
+const stylesSource = await readFile(path.join(sourceRoot, "styles.css"));
+const runtimeSource = await readFile(path.join(sourceRoot, "runtime.js"));
+const assetVersion = createHash("sha256")
+  .update(stylesSource)
+  .update(runtimeSource)
+  .digest("hex")
+  .slice(0, 10);
 
 if (!outputRoot.startsWith(repositoryRoot + path.sep)) {
   throw new Error(`refusing to build outside the repository: ${outputRoot}`);
@@ -682,11 +690,11 @@ function render(page, index) {
   <meta property="og:image" content="${siteUrl}assets/oplogs-journal-field.webp">
   <link rel="canonical" href="${canonical}">
   <link rel="icon" href="${basePath}assets/oplogs-mark.png" type="image/png">
-  <link rel="stylesheet" href="${basePath}styles.css">
+  <link rel="stylesheet" href="${basePath}styles.css?v=${assetVersion}">
   <title>${escapeHtml(page.title)} · oplogs</title>
   <script>try{document.documentElement.dataset.theme=localStorage.getItem("oplogs-docs-theme")||"dark"}catch(_error){document.documentElement.dataset.theme="dark"}</script>
 </head>
-<body data-page="${escapeHtml(page.slug || "overview")}" data-search-index="${basePath}search-index.json">
+<body data-page="${escapeHtml(page.slug || "overview")}" data-search-index="${basePath}search-index.json?v=${assetVersion}">
   <a class="skip-link" href="#main-content">skip to documentation</a>
   <header class="site-header">
     <a class="brand" href="${basePath}" aria-label="oplogs documentation home"><img src="${basePath}assets/oplogs-mark.png" alt=""><span>oplogs</span><b>docs</b></a>
@@ -717,7 +725,7 @@ function render(page, index) {
       </aside>
     </div>
   </main>
-  <script src="${basePath}runtime.js" defer></script>
+  <script src="${basePath}runtime.js?v=${assetVersion}" defer></script>
 </body>
 </html>`;
 }
@@ -727,8 +735,8 @@ await mkdir(path.join(outputRoot, "assets"), { recursive: true });
 await mkdir(path.join(outputRoot, "fonts"), { recursive: true });
 await cp(path.join(sourceRoot, "assets"), path.join(outputRoot, "assets"), { recursive: true });
 await cp(path.join(repositoryRoot, "web", "public", "fonts"), path.join(outputRoot, "fonts"), { recursive: true });
-await writeFile(path.join(outputRoot, "styles.css"), await readFile(path.join(sourceRoot, "styles.css")));
-await writeFile(path.join(outputRoot, "runtime.js"), await readFile(path.join(sourceRoot, "runtime.js")));
+await writeFile(path.join(outputRoot, "styles.css"), stylesSource);
+await writeFile(path.join(outputRoot, "runtime.js"), runtimeSource);
 
 for (const [index, page] of pages.entries()) {
   const destination = page.slug ? path.join(outputRoot, page.slug) : outputRoot;

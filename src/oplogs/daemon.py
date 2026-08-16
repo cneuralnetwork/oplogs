@@ -18,11 +18,11 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .alerts import AlertEngine
-from .config import DaemonInfo, daemon_file, write_daemon_info
+from .config import DaemonInfo, daemon_file, read_daemon_info, write_daemon_info
 from .importer import import_wandb
 from .models import Event, utc_now
 from .reports import export_pdf, render_report
-from .storage import Storage
+from .storage import Storage, derive_artifact_id
 
 
 def create_app(storage: Storage | None = None, token: str | None = None) -> FastAPI:
@@ -124,45 +124,55 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
                 values = event.payload.get("values", {})
                 indexed: dict[str, Any] = {}
                 for key, descriptor in values.items():
-                    if not isinstance(descriptor, dict):
-                        indexed[key] = descriptor
-                    elif "path" in descriptor:
-                        artifact_descriptor = dict(descriptor)
-                        if descriptor.get("caption"):
-                            artifact_descriptor["metadata"] = {
-                                **descriptor.get("metadata", {}),
-                                "caption": descriptor["caption"],
-                            }
-                        indexed[key] = store.add_artifact(run_id, artifact_descriptor)
-                    elif "file" in descriptor and "path" in descriptor["file"]:
-                        artifact_descriptor = {
-                            **descriptor["file"],
-                            "artifact_type": descriptor.get("media_type", "file"),
-                            "metadata": {
-                                **descriptor["file"].get("metadata", {}),
-                                **(
-                                    {"caption": descriptor["caption"]}
-                                    if descriptor.get("caption")
-                                    else {}
-                                ),
-                            },
-                        }
-                        indexed[key] = store.add_artifact(run_id, artifact_descriptor)
-                    elif "data" in descriptor:
-                        data = base64.b64decode(descriptor["data"], validate=True)
-                        extension = descriptor.get("mime_type", "application/octet-stream").split(
-                            "/"
-                        )[-1]
-                        indexed[key] = store.add_bytes(
-                            run_id,
-                            data,
-                            f"{key}-{event.sequence}.{extension}",
-                            descriptor.get("mime_type", "application/octet-stream"),
-                            descriptor.get("media_type", "media"),
-                            {"caption": descriptor.get("caption")},
-                        )
-                    else:
-                        indexed[key] = descriptor
+                                    if not isinstance(descriptor, dict):
+                                        indexed[key] = descriptor
+                                        continue
+                                    # Deterministic from (run, sequence, key) so a resent batch
+                                    # (SDK retry/spool replay) reuses the same artifact id
+                                    # instead of minting a new row before dedup runs below.
+                                    artifact_id = derive_artifact_id(run_id, event.sequence, key)
+                                    if "path" in descriptor:
+                                        artifact_descriptor = dict(descriptor)
+                                        if descriptor.get("caption"):
+                                            artifact_descriptor["metadata"] = {
+                                                **descriptor.get("metadata", {}),
+                                                "caption": descriptor["caption"],
+                                            }
+                                        indexed[key] = store.add_artifact(
+                                            run_id, artifact_descriptor, artifact_id=artifact_id
+                                        )
+                                    elif "file" in descriptor and "path" in descriptor["file"]:
+                                        artifact_descriptor = {
+                                            **descriptor["file"],
+                                            "artifact_type": descriptor.get("media_type", "file"),
+                                            "metadata": {
+                                                **descriptor["file"].get("metadata", {}),
+                                                **(
+                                                    {"caption": descriptor["caption"]}
+                                                    if descriptor.get("caption")
+                                                    else {}
+                                                ),
+                                            },
+                                        }
+                                        indexed[key] = store.add_artifact(
+                                            run_id, artifact_descriptor, artifact_id=artifact_id
+                                        )
+                                    elif "data" in descriptor:
+                                        data = base64.b64decode(descriptor["data"], validate=True)
+                                        extension = descriptor.get("mime_type", "application/octet-stream").split(
+                                            "/"
+                                        )[-1]
+                                        indexed[key] = store.add_bytes(
+                                            run_id,
+                                            data,
+                                            f"{key}-{event.sequence}.{extension}",
+                                            descriptor.get("mime_type", "application/octet-stream"),
+                                            descriptor.get("media_type", "media"),
+                                            {"caption": descriptor.get("caption")},
+                                            artifact_id=artifact_id,
+                                        )
+                                    else:
+                                        indexed[key] = descriptor
                 event.payload["values"] = indexed
                 event.seal()
             pending.append(event)
@@ -363,9 +373,12 @@ def main() -> None:
             create_app(token=args.token), host="127.0.0.1", port=args.port, log_level="warning"
         )
     finally:
-        current = daemon_file()
-        if current.exists():
-            current.unlink(missing_ok=True)
+            # Only remove daemon.json if it still describes *this* process. A
+            # stale daemon that is slow to exit could otherwise unlink the
+            # record written by a newer daemon that started concurrently.
+            current = read_daemon_info()
+            if current is not None and current.pid == info.pid:
+                daemon_file().unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

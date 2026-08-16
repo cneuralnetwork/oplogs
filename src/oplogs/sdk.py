@@ -136,7 +136,12 @@ class _Sender:
                 for _ in batch:
                     self.pending.task_done()
             if self._closed.is_set():
-                break
+                            break
+                    # A run that spooled events (e.g. because close() drained the queue
+                    # while the daemon was unreachable) should not leave them stranded in
+                    # spool.jsonl forever: try once more before the sender thread exits,
+                    # in case the daemon became reachable again during this run.
+        self._replay(client)
         client.close()
 
     def _spool(self, batch: list[dict[str, Any]]) -> None:

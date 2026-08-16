@@ -17,6 +17,17 @@ from typing import Any
 from .config import data_dir
 from .models import Event, RunRecord, utc_now
 
+
+def derive_artifact_id(run_id: str, sequence: int, key: str) -> str:
+    """Deterministic artifact id for a (run, event sequence, value key).
+
+    Retried batches carry the same sequence and key for the same logical
+    value, so deriving the id this way makes artifact inserts idempotent
+    instead of minting a fresh random id on every replay.
+    """
+    seed = f"{run_id}:{sequence}:{key}".encode()
+    return hashlib.sha256(seed).hexdigest()[:32]
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -435,7 +446,9 @@ class Storage:
                 manifest.update(state=state, updated_at=now, finished_at=now)
                 self._write_manifest(run_id, manifest)
 
-    def add_artifact(self, run_id: str, descriptor: dict[str, Any]) -> dict[str, Any]:
+    def add_artifact(
+            self, run_id: str, descriptor: dict[str, Any], artifact_id: str | None = None
+        ) -> dict[str, Any]:
         source = Path(descriptor["path"]).expanduser().resolve()
         if not source.is_file():
             raise FileNotFoundError(source)
@@ -450,7 +463,7 @@ class Storage:
             temporary = target.with_suffix(".tmp")
             shutil.copyfile(source, temporary)
             temporary.replace(target)
-        artifact_id = uuid.uuid4().hex
+        artifact_id = artifact_id or uuid.uuid4().hex
         now = utc_now()
         record = {
             "id": artifact_id,
@@ -467,7 +480,7 @@ class Storage:
         }
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     artifact_id,
                     run_id,
@@ -491,8 +504,9 @@ class Storage:
         name: str,
         mime_type: str,
         artifact_type: str = "media",
-        metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+                metadata: dict[str, Any] | None = None,
+                artifact_id: str | None = None,
+            ) -> dict[str, Any]:
         hexdigest = hashlib.sha256(data).hexdigest()
         target = self.blobs_dir / hexdigest[:2] / hexdigest[2:]
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -500,7 +514,7 @@ class Storage:
             temporary = target.with_suffix(".tmp")
             temporary.write_bytes(data)
             temporary.replace(target)
-        artifact_id = uuid.uuid4().hex
+        artifact_id = artifact_id or uuid.uuid4().hex
         now = utc_now()
         record = {
             "id": artifact_id,
@@ -517,7 +531,7 @@ class Storage:
         }
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     artifact_id,
                     run_id,

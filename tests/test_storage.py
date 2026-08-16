@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from oplogs.models import Event
-from oplogs.storage import Storage
+from oplogs.storage import Storage, artifact_id
 
 
 def test_finished_journal_event_finalizes_durable_run(store: Storage) -> None:
@@ -131,3 +131,95 @@ def test_traces_reports_sweeps_and_alerts(store: Storage) -> None:
     assert store.sweeps()[0]["state"] == "running"
     alert = store.create_alert("agents", {"event": "exception"})
     assert store.alerts()[0]["id"] == alert["id"]
+
+
+def test_replay_spools_ingests_orphaned_sdk_events(store: Storage, tmp_path: Path) -> None:
+    run = store.create_run("outage", run_id="orphan-run")
+    source = tmp_path / "model.pt"
+    source.write_bytes(b"weights")
+    metric = Event(run.id, 0, "metric", {"values": {"loss": 1.0}}).to_dict()
+    artifact = Event(
+        run.id,
+        1,
+        "artifact",
+        {
+            "values": {
+                "checkpoint": {"path": str(source), "name": "model.pt", "artifact_type": "model"}
+            }
+        },
+    ).to_dict()
+    spool = store.runs_dir / run.id / "spool.jsonl"
+    spool.write_text(
+        json.dumps(metric, separators=(",", ":"))
+        + "\n"
+        + json.dumps(artifact, separators=(",", ":"))
+        + "\n"
+    )
+
+    assert store.replay_spools() == 2
+
+    assert not spool.exists()
+    assert store.history(run.id)["loss"][0]["value"] == 1.0
+    artifacts = store.artifacts(run.id)
+    assert len(artifacts) == 1
+    assert artifacts[0]["name"] == "model.pt"
+    assert store.replay_spools() == 0
+    assert len((store.runs_dir / run.id / "events.jsonl").read_text().splitlines()) == 2
+
+
+def test_replay_spools_restores_run_from_manifest(store: Storage, tmp_path: Path) -> None:
+    run = store.create_run("outage", run_id="orphan-restore")
+    metric = Event(run.id, 0, "metric", {"values": {"loss": 0.5}}).to_dict()
+    spool = store.runs_dir / run.id / "spool.jsonl"
+    spool.write_text(json.dumps(metric, separators=(",", ":")) + "\n")
+    store.database_path.unlink()
+    Path(f"{store.database_path}-wal").unlink(missing_ok=True)
+    Path(f"{store.database_path}-shm").unlink(missing_ok=True)
+
+    recovered = Storage(store.root)
+    assert recovered.replay_spools() == 1
+    assert recovered.get_run(run.id)["state"] == "running"
+    assert recovered.history(run.id)["loss"][0]["value"] == 0.5
+
+
+def test_replay_spools_skips_corrupt_lines_but_keeps_valid_events(
+    store: Storage, tmp_path: Path
+) -> None:
+    run = store.create_run("outage", run_id="partial-spool")
+    good = Event(run.id, 0, "metric", {"values": {"loss": 0.25}}).to_dict()
+    spool = store.runs_dir / run.id / "spool.jsonl"
+    spool.write_text(
+        json.dumps(good, separators=(",", ":")) + "\n" + "{truncated-and-broken-json\n" + "\n"
+    )
+
+    assert store.replay_spools() == 1
+
+    assert not spool.exists()
+    assert store.history(run.id)["loss"][0]["value"] == 0.25
+
+
+def test_artifact_id_encoding_is_unambiguous() -> None:
+    first = artifact_id("a", 1, "2:x")
+    second = artifact_id("a:1", 2, "x")
+    assert first != second
+
+
+def test_add_artifact_returns_persisted_record_on_id_conflict(
+    store: Storage, tmp_path: Path
+) -> None:
+    run = store.create_run("p", run_id="conflict-run")
+    first_source = tmp_path / "a.bin"
+    first_source.write_bytes(b"version-one")
+    changed_source = tmp_path / "b.bin"
+    changed_source.write_bytes(b"version-two-different")
+
+    first = store.add_artifact(
+        run.id, {"path": str(first_source), "name": "model.bin"}, artifact_id="fixed"
+    )
+    second = store.add_artifact(
+        run.id, {"path": str(changed_source), "name": "model.bin"}, artifact_id="fixed"
+    )
+
+    assert len(store.artifacts(run.id)) == 1
+    assert second["digest"] == first["digest"]
+    assert second["digest"] == store.artifacts(run.id)[0]["digest"]

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import json
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -18,9 +17,9 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .alerts import AlertEngine
-from .config import DaemonInfo, daemon_file, write_daemon_info
+from .config import DaemonInfo, clear_daemon_info, write_daemon_info
 from .importer import import_wandb
-from .models import Event, utc_now
+from .models import utc_now
 from .reports import export_pdf, render_report
 from .storage import Storage
 
@@ -33,6 +32,8 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        with suppress(Exception):
+            store.replay_spools()
         yield
 
     app = FastAPI(title="oplogs", version="0.1.0", lifespan=lifespan)
@@ -116,57 +117,7 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
 
     @app.post("/api/runs/{run_id}/events", dependencies=[Depends(authorize)])
     async def append_events(run_id: str, payload: list[dict[str, Any]]) -> dict[str, int]:
-        pending: list[Event] = []
-        for raw in payload:
-            raw["run_id"] = run_id
-            event = Event.from_dict(raw) if raw.get("checksum") else Event(**raw).seal()
-            if event.kind in {"artifact", "media"}:
-                values = event.payload.get("values", {})
-                indexed: dict[str, Any] = {}
-                for key, descriptor in values.items():
-                    if not isinstance(descriptor, dict):
-                        indexed[key] = descriptor
-                    elif "path" in descriptor:
-                        artifact_descriptor = dict(descriptor)
-                        if descriptor.get("caption"):
-                            artifact_descriptor["metadata"] = {
-                                **descriptor.get("metadata", {}),
-                                "caption": descriptor["caption"],
-                            }
-                        indexed[key] = store.add_artifact(run_id, artifact_descriptor)
-                    elif "file" in descriptor and "path" in descriptor["file"]:
-                        artifact_descriptor = {
-                            **descriptor["file"],
-                            "artifact_type": descriptor.get("media_type", "file"),
-                            "metadata": {
-                                **descriptor["file"].get("metadata", {}),
-                                **(
-                                    {"caption": descriptor["caption"]}
-                                    if descriptor.get("caption")
-                                    else {}
-                                ),
-                            },
-                        }
-                        indexed[key] = store.add_artifact(run_id, artifact_descriptor)
-                    elif "data" in descriptor:
-                        data = base64.b64decode(descriptor["data"], validate=True)
-                        extension = descriptor.get("mime_type", "application/octet-stream").split(
-                            "/"
-                        )[-1]
-                        indexed[key] = store.add_bytes(
-                            run_id,
-                            data,
-                            f"{key}-{event.sequence}.{extension}",
-                            descriptor.get("mime_type", "application/octet-stream"),
-                            descriptor.get("media_type", "media"),
-                            {"caption": descriptor.get("caption")},
-                        )
-                    else:
-                        indexed[key] = descriptor
-                event.payload["values"] = indexed
-                event.seal()
-            pending.append(event)
-        accepted = store.append_events(pending)
+        pending, accepted = store.ingest_events(run_id, payload)
         for event in pending:
             alert_engine.evaluate(event)
         await publish({"type": "events.appended", "run_id": run_id, "count": accepted})
@@ -363,9 +314,7 @@ def main() -> None:
             create_app(token=args.token), host="127.0.0.1", port=args.port, log_level="warning"
         )
     finally:
-        current = daemon_file()
-        if current.exists():
-            current.unlink(missing_ok=True)
+        clear_daemon_info()
 
 
 if __name__ == "__main__":

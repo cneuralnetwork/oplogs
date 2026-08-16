@@ -104,6 +104,24 @@ class _Sender:
         self._closed.set()
         self.pending.put(None)
         self._thread.join(timeout=3)
+        self._replay_pending()
+
+    def _replay_pending(self) -> None:
+        """Deliver anything spooled while the daemon was unreachable.
+
+        The sender loop can exit while a batch is still spooled (a run finishing
+        during an outage). Retry once with a fresh client so those events are not
+        left orphaned on disk.
+        """
+        if not self.spool_path.exists():
+            return
+        try:
+            with httpx.Client(
+                base_url=self.base_url, headers={"X-OPLOGS-Token": self.token}, timeout=10
+            ) as client:
+                self._replay(client)
+        except (httpx.HTTPError, OSError):
+            pass
 
     def _loop(self) -> None:
         client = httpx.Client(
@@ -149,7 +167,10 @@ class _Sender:
         if not self.spool_path.exists():
             return
         replay = self.spool_path.with_suffix(".replay")
-        self.spool_path.replace(replay)
+        try:
+            self.spool_path.replace(replay)
+        except FileNotFoundError:
+            return
         events = [
             json.loads(line) for line in replay.read_text(encoding="utf-8").splitlines() if line
         ]

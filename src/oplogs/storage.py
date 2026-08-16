@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -16,6 +17,18 @@ from typing import Any
 
 from .config import data_dir
 from .models import Event, RunRecord, utc_now
+
+
+def artifact_id(run_id: str, sequence: int, key: str) -> str:
+    """Deterministic artifact id so a retried batch never duplicates a record.
+
+    The tuple is JSON-encoded so distinct (run_id, sequence, key) triples can
+    never collide: ``"a:1:2:x"`` style concatenation would treat ``run_id="a",
+    key="2:x"`` the same as ``run_id="a:1", key="x"``.
+    """
+    identity = json.dumps((run_id, sequence, key), separators=(",", ":"))
+    return hashlib.sha256(identity.encode()).hexdigest()[:12]
+
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -261,6 +274,133 @@ class Storage:
                 self._sync_terminal_manifest(event)
         return len(accepted)
 
+    def ingest_events(
+        self, run_id: str, raw_events: list[dict[str, Any]]
+    ) -> tuple[list[Event], int]:
+        """Parse, expand, and append a batch of client-sealed events.
+
+        File/media descriptors are expanded into content-addressed artifact
+        records exactly once, so the live API path and spool replay share the
+        same journaling behavior.
+        """
+        pending: list[Event] = []
+        for raw in raw_events:
+            raw["run_id"] = run_id
+            event = Event.from_dict(raw) if raw.get("checksum") else Event(**raw).seal()
+            if event.kind in {"artifact", "media"}:
+                self._expand_artifacts(event)
+            pending.append(event)
+        accepted = self.append_events(pending)
+        return pending, accepted
+
+    def _expand_artifacts(self, event: Event) -> None:
+        values = event.payload.get("values", {})
+        indexed: dict[str, Any] = {}
+        for key, descriptor in values.items():
+            if not isinstance(descriptor, dict):
+                indexed[key] = descriptor
+            elif "path" in descriptor:
+                artifact_descriptor = dict(descriptor)
+                if descriptor.get("caption"):
+                    artifact_descriptor["metadata"] = {
+                        **descriptor.get("metadata", {}),
+                        "caption": descriptor["caption"],
+                    }
+                indexed[key] = self.add_artifact(
+                    event.run_id,
+                    artifact_descriptor,
+                    artifact_id=artifact_id(event.run_id, event.sequence, key),
+                )
+            elif "file" in descriptor and "path" in descriptor["file"]:
+                artifact_descriptor = {
+                    **descriptor["file"],
+                    "artifact_type": descriptor.get("media_type", "file"),
+                    "metadata": {
+                        **descriptor["file"].get("metadata", {}),
+                        **({"caption": descriptor["caption"]} if descriptor.get("caption") else {}),
+                    },
+                }
+                indexed[key] = self.add_artifact(
+                    event.run_id,
+                    artifact_descriptor,
+                    artifact_id=artifact_id(event.run_id, event.sequence, key),
+                )
+            elif "data" in descriptor:
+                data = base64.b64decode(descriptor["data"], validate=True)
+                extension = descriptor.get("mime_type", "application/octet-stream").split("/")[-1]
+                indexed[key] = self.add_bytes(
+                    event.run_id,
+                    data,
+                    f"{key}-{event.sequence}.{extension}",
+                    descriptor.get("mime_type", "application/octet-stream"),
+                    descriptor.get("media_type", "media"),
+                    {"caption": descriptor.get("caption")},
+                    artifact_id=artifact_id(event.run_id, event.sequence, key),
+                )
+            else:
+                indexed[key] = descriptor
+        event.payload["values"] = indexed
+        event.seal()
+
+    def replay_spools(self) -> int:
+        """Ingest orphaned SDK spool files left by daemon outages.
+
+        The SDK writes unacknowledged events beside the run when the daemon is
+        unreachable. On startup the daemon rotates each spool, restores its run
+        from the manifest if the index is gone, and appends the events so a run
+        that finished during an outage is never silently lost. Events that fail
+        validation or artifact expansion are skipped, never the whole spool.
+        """
+        ingested = 0
+        for run_path in sorted(self.runs_dir.iterdir()):
+            if not run_path.is_dir():
+                continue
+            spool = run_path / "spool.jsonl"
+            rotated = run_path / "spool.pending"
+            if rotated.exists() and not spool.exists():
+                rotated.replace(spool)
+            if not spool.exists():
+                continue
+            run_id = run_path.name
+            if not self.get_run(run_id):
+                manifest_path = run_path / "manifest.json"
+                if not manifest_path.exists():
+                    continue
+                try:
+                    self._restore_run_manifest(
+                        json.loads(manifest_path.read_text(encoding="utf-8"))
+                    )
+                except (KeyError, TypeError, json.JSONDecodeError):
+                    continue
+            try:
+                spool.replace(rotated)
+            except OSError:
+                continue
+            events: list[Event] = []
+            try:
+                lines = rotated.read_text(encoding="utf-8").splitlines()
+            finally:
+                rotated.unlink(missing_ok=True)
+            for line in lines:
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    raw["run_id"] = run_id
+                    event = Event.from_dict(raw) if raw.get("checksum") else Event(**raw).seal()
+                    if event.kind in {"artifact", "media"}:
+                        self._expand_artifacts(event)
+                    events.append(event)
+                except (ValueError, TypeError, OSError, json.JSONDecodeError):
+                    continue
+            if not events:
+                continue
+            try:
+                ingested += self.append_events(events)
+            except (ValueError, TypeError, sqlite3.Error):
+                continue
+        return ingested
+
     def _index_event(self, connection: sqlite3.Connection, event: Event) -> None:
         connection.execute(
             "INSERT OR IGNORE INTO events VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -435,7 +575,12 @@ class Storage:
                 manifest.update(state=state, updated_at=now, finished_at=now)
                 self._write_manifest(run_id, manifest)
 
-    def add_artifact(self, run_id: str, descriptor: dict[str, Any]) -> dict[str, Any]:
+    def add_artifact(
+        self,
+        run_id: str,
+        descriptor: dict[str, Any],
+        artifact_id: str | None = None,
+    ) -> dict[str, Any]:
         source = Path(descriptor["path"]).expanduser().resolve()
         if not source.is_file():
             raise FileNotFoundError(source)
@@ -450,7 +595,7 @@ class Storage:
             temporary = target.with_suffix(".tmp")
             shutil.copyfile(source, temporary)
             temporary.replace(target)
-        artifact_id = uuid.uuid4().hex
+        artifact_id = artifact_id or uuid.uuid4().hex
         now = utc_now()
         record = {
             "id": artifact_id,
@@ -466,8 +611,8 @@ class Storage:
             "source_path": str(source),
         }
         with self.connection() as connection:
-            connection.execute(
-                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            cursor = connection.execute(
+                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                 (
                     artifact_id,
                     run_id,
@@ -482,6 +627,8 @@ class Storage:
                     str(source),
                 ),
             )
+        if cursor.rowcount == 0:
+            return self._persisted_artifact(artifact_id, record)
         return record
 
     def add_bytes(
@@ -492,6 +639,7 @@ class Storage:
         mime_type: str,
         artifact_type: str = "media",
         metadata: dict[str, Any] | None = None,
+        artifact_id: str | None = None,
     ) -> dict[str, Any]:
         hexdigest = hashlib.sha256(data).hexdigest()
         target = self.blobs_dir / hexdigest[:2] / hexdigest[2:]
@@ -500,7 +648,7 @@ class Storage:
             temporary = target.with_suffix(".tmp")
             temporary.write_bytes(data)
             temporary.replace(target)
-        artifact_id = uuid.uuid4().hex
+        artifact_id = artifact_id or uuid.uuid4().hex
         now = utc_now()
         record = {
             "id": artifact_id,
@@ -516,8 +664,8 @@ class Storage:
             "source_path": None,
         }
         with self.connection() as connection:
-            connection.execute(
-                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            cursor = connection.execute(
+                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                 (
                     artifact_id,
                     run_id,
@@ -532,7 +680,36 @@ class Storage:
                     None,
                 ),
             )
+        if cursor.rowcount == 0:
+            return self._persisted_artifact(artifact_id, record)
         return record
+
+    def _persisted_artifact(self, artifact_id: str, record: dict[str, Any]) -> dict[str, Any]:
+        """Return the stored row when an idempotent insert hit an existing record.
+
+        Keeps the event journal and the artifact table consistent: a retried
+        batch must reference the digest the database actually persisted, not the
+        digest it attempted.
+        """
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM artifacts WHERE id=?", (artifact_id,)
+            ).fetchone()
+        if not row:
+            return record
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "name": row["name"],
+            "artifact_type": row["artifact_type"],
+            "mime_type": row["mime_type"],
+            "digest": row["digest"],
+            "size": row["size"],
+            "created_at": row["created_at"],
+            "aliases": json.loads(row["aliases_json"]),
+            "metadata": json.loads(row["metadata_json"]),
+            "source_path": row["source_path"],
+        }
 
     def artifact_path(self, digest: str) -> Path:
         return self.blobs_dir / digest[:2] / digest[2:]

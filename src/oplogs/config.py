@@ -51,5 +51,23 @@ def write_daemon_info(info: DaemonInfo) -> None:
     target.chmod(0o600)
 
 
+def clear_daemon_info() -> None:
+    """Remove daemon.json only when it describes this process.
+
+    Concurrent daemons can overwrite the info file; an exiting daemon must not
+    unlink the newer daemon's record. A tiny check-then-unlink window remains
+    (the file can be replaced between the read and the unlink); closing it would
+    need cross-process locking, which is disproportionate for a single-user
+    daemon. This still removes the common failure where a stale daemon deletes
+    a live daemon's record.
+    """
+    target = daemon_file()
+    if not target.exists():
+        return
+    info = read_daemon_info()
+    if info is None or info.pid == os.getpid():
+        target.unlink(missing_ok=True)
+
+
 def new_token() -> str:
     return secrets.token_urlsafe(32)

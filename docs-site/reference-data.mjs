@@ -21,7 +21,7 @@ export const apiSymbols = [
     parameters: [
       ["project", "str", '"uncategorized"', "Project used to group runs in the dashboard."],
       ["name", "str | None", "None", "Human-readable run name. The daemon assigns one when omitted."],
-      ["config", "dict[str, Any] | None", "None", "Run configuration merged over any active sweep configuration."],
+      ["config", "dict[str, Any] | None", "None", "Base run configuration. An active sweep overrides matching keys."],
       ["tags", "list[str] | None", "None", "Run tags. An active sweep adds its own sweep tag."],
       ["resume", "str", '"auto"', "Reserved for compatibility. Version 0.1.0 accepts this value but does not resume an earlier run."],
       ["autolog", "bool", "True", "Discover supported libraries already imported by the process and install their capture hooks."],

@@ -1,44 +1,70 @@
-"""Verify sweep parameters override script defaults in init() config merging."""
+"""Verify sweep parameters override script defaults in sdk.init() config merging."""
 
 from __future__ import annotations
 
 import json
-import os
+from typing import Any
+
+import oplogs
+from oplogs.config import DaemonInfo
+
+
+def _mock_init_environment(monkeypatch) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict[str, Any]:
+            return {"id": "test-run", "project": "test", "name": "test"}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args) -> None:
+            pass
+
+        def post(self, url: str, json: dict[str, Any] | None = None, **kwargs) -> FakeResponse:
+            payload.update(json or {})
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "oplogs.sdk.ensure_daemon",
+        lambda **kwargs: (DaemonInfo(1, 7437, "token", "2026-08-16T00:00:00Z"), False),
+    )
+    monkeypatch.setattr("oplogs.sdk.httpx.Client", FakeClient)
+    monkeypatch.setattr("oplogs.sdk.Run", lambda *args, **kwargs: None)
+    return payload
 
 
 def test_sweep_config_overrides_script_defaults(monkeypatch) -> None:
-    """Sweep-injected hyperparameters must take precedence over script defaults.
+    """Sweep-injected hyperparameters must take precedence over script defaults in sdk.init()."""
+    payload = _mock_init_environment(monkeypatch)
 
-    When a sweep controller sets OPLOGS_SWEEP_CONFIG={"learning_rate": 0.05}
-    and the training script calls oplogs.init(config={"learning_rate": 0.001}),
-    the merged config must contain learning_rate=0.05 from the sweep, not
-    the script default 0.001.
-
-    Non-swept keys like "model" must be preserved from the script config.
-    """
     sweep_params = {"learning_rate": 0.05, "batch_size": 128}
     monkeypatch.setenv("OPLOGS_SWEEP_CONFIG", json.dumps(sweep_params))
     monkeypatch.setenv("OPLOGS_SWEEP_ID", "sweep-abc")
     monkeypatch.setenv("OPLOGS_SWEEP_INDEX", "3")
 
-    config = {"learning_rate": 0.001, "batch_size": 32, "model": "resnet18"}
-    sweep_values = json.loads(os.environ.get("OPLOGS_SWEEP_CONFIG", "{}"))
-    sweep_id = os.environ.get("OPLOGS_SWEEP_ID")
-    sweep_index = os.environ.get("OPLOGS_SWEEP_INDEX")
-    sweep_metadata = {
-        key: value
-        for key, value in {
-            "_oplogs.sweep_id": sweep_id,
-            "_oplogs.sweep_index": int(sweep_index)
-            if sweep_index and sweep_index.isdigit()
-            else sweep_index,
-        }.items()
-        if value is not None
-    }
-    merged_config = {**(config or {}), **sweep_values, **sweep_metadata}
+    oplogs.init(
+        config={"learning_rate": 0.001, "batch_size": 32, "model": "resnet18"},
+        open=False,
+    )
 
+    merged_config = payload.get("config", {})
+
+    # Sweep parameters must override script defaults.
     assert merged_config["learning_rate"] == 0.05
     assert merged_config["batch_size"] == 128
+
+    # Non-swept script parameters must be preserved.
     assert merged_config["model"] == "resnet18"
 
     # Sweep metadata must be present.
@@ -47,25 +73,17 @@ def test_sweep_config_overrides_script_defaults(monkeypatch) -> None:
 
 
 def test_config_unchanged_without_active_sweep(monkeypatch) -> None:
-    """Without sweep env vars, the merged config must equal the script config."""
+    """Without sweep env vars, sdk.init() submitted config equals script config."""
+    payload = _mock_init_environment(monkeypatch)
+
     monkeypatch.delenv("OPLOGS_SWEEP_CONFIG", raising=False)
     monkeypatch.delenv("OPLOGS_SWEEP_ID", raising=False)
     monkeypatch.delenv("OPLOGS_SWEEP_INDEX", raising=False)
 
-    config = {"learning_rate": 0.001, "model": "resnet18"}
-    sweep_values = json.loads(os.environ.get("OPLOGS_SWEEP_CONFIG", "{}"))
-    sweep_id = os.environ.get("OPLOGS_SWEEP_ID")
-    sweep_index = os.environ.get("OPLOGS_SWEEP_INDEX")
-    sweep_metadata = {
-        key: value
-        for key, value in {
-            "_oplogs.sweep_id": sweep_id,
-            "_oplogs.sweep_index": int(sweep_index)
-            if sweep_index and sweep_index.isdigit()
-            else sweep_index,
-        }.items()
-        if value is not None
-    }
-    merged_config = {**(config or {}), **sweep_values, **sweep_metadata}
+    oplogs.init(
+        config={"learning_rate": 0.001, "model": "resnet18"},
+        open=False,
+    )
 
+    merged_config = payload.get("config", {})
     assert merged_config == {"learning_rate": 0.001, "model": "resnet18"}

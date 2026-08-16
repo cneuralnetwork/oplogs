@@ -167,7 +167,10 @@ class _Sender:
         if not self.spool_path.exists():
             return
         replay = self.spool_path.with_suffix(".replay")
-        self.spool_path.replace(replay)
+        try:
+            self.spool_path.replace(replay)
+        except FileNotFoundError:
+            return
         events = [
             json.loads(line) for line in replay.read_text(encoding="utf-8").splitlines() if line
         ]

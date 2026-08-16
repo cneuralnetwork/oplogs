@@ -163,3 +163,21 @@ def test_sender_replays_spooled_events_when_daemon_recovers(tmp_path: Path) -> N
 
     assert len(received) == 2
     assert not spool_path.exists()
+
+
+def test_daemon_startup_replays_orphaned_spools(store: Storage, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from oplogs.daemon import create_app
+
+    run = store.create_run("outage", run_id="startup-run")
+    metric = Event(run.id, 0, "metric", {"values": {"loss": 2.0}}).to_dict()
+    (store.runs_dir / run.id / "spool.jsonl").write_text(
+        json.dumps(metric, separators=(",", ":")) + "\n"
+    )
+
+    with TestClient(create_app(storage=store, token="secret")) as client:
+        assert client.get("/health").json()["status"] == "ok"
+
+    assert store.history(run.id)["loss"][0]["value"] == 2.0
+    assert not (store.runs_dir / run.id / "spool.jsonl").exists()

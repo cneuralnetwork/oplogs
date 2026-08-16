@@ -55,7 +55,11 @@ def clear_daemon_info() -> None:
     """Remove daemon.json only when it describes this process.
 
     Concurrent daemons can overwrite the info file; an exiting daemon must not
-    unlink the newer daemon's record.
+    unlink the newer daemon's record. A tiny check-then-unlink window remains
+    (the file can be replaced between the read and the unlink); closing it would
+    need cross-process locking, which is disproportionate for a single-user
+    daemon. This still removes the common failure where a stale daemon deletes
+    a live daemon's record.
     """
     target = daemon_file()
     if not target.exists():

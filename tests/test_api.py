@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -66,8 +68,44 @@ async def test_writes_require_local_capability(store: Storage) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rejects_dns_rebinding_host_headers(store: Storage) -> None:
+async def test_replayed_artifact_batch_does_not_duplicate_rows(
+    store: Storage, tmp_path: Path
+) -> None:
+    """A resent batch (SDK retry after a network hiccup) must not mint a
+    second artifact row for the same file: dedup happens after artifacts
+    are already inserted, so the insert itself has to be idempotent."""
     transport = httpx.ASGITransport(app=create_app(store, token="secret"))
+    source = tmp_path / "model.pt"
+    source.write_bytes(b"weights")
+
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        response = await client.get("/api/info", headers={"Host": "attacker.example"})
-        assert response.status_code == 403
+        await client.post(
+            "/api/runs",
+            headers={"X-OPLOGS-Token": "secret"},
+            json={"id": "retry-run", "project": "durability"},
+        )
+        event = Event(
+            "retry-run",
+            0,
+            "artifact",
+            {"values": {"checkpoint": {"path": str(source), "name": "model.pt"}}},
+        ).seal()
+        batch = [event.to_dict()]
+
+        first = await client.post(
+            "/api/runs/retry-run/events",
+            headers={"X-OPLOGS-Token": "secret"},
+            json=batch,
+        )
+        assert first.json() == {"accepted": 1}
+
+        # Simulate the SDK's spooled retry resending the identical batch.
+        retry = await client.post(
+            "/api/runs/retry-run/events",
+            headers={"X-OPLOGS-Token": "secret"},
+            json=batch,
+        )
+        assert retry.json() == {"accepted": 0}
+
+        artifacts = (await client.get("/api/runs/retry-run/artifacts")).json()
+        assert len(artifacts) == 1

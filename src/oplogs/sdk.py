@@ -428,7 +428,7 @@ def init(
         }.items()
         if value is not None
     }
-    merged_config = {**sweep_values, **sweep_metadata, **(config or {})}
+    merged_config = {**(config or {}), **sweep_values, **sweep_metadata}
     merged_tags = [*(tags or []), *([f"sweep:{sweep_id}"] if sweep_id else [])]
     payload = {
         "project": project,

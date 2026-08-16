@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import hashlib
 import json
 import os
 from contextlib import asynccontextmanager
@@ -18,11 +19,16 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .alerts import AlertEngine
-from .config import DaemonInfo, daemon_file, write_daemon_info
+from .config import DaemonInfo, clear_daemon_info, write_daemon_info
 from .importer import import_wandb
 from .models import Event, utc_now
 from .reports import export_pdf, render_report
 from .storage import Storage
+
+
+def _artifact_id(run_id: str, sequence: int, key: str) -> str:
+    """Deterministic artifact id so a retried batch never duplicates a record."""
+    return hashlib.sha256(f"{run_id}:{sequence}:{key}".encode()).hexdigest()[:12]
 
 
 def create_app(storage: Storage | None = None, token: str | None = None) -> FastAPI:
@@ -133,7 +139,11 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
                                 **descriptor.get("metadata", {}),
                                 "caption": descriptor["caption"],
                             }
-                        indexed[key] = store.add_artifact(run_id, artifact_descriptor)
+                        indexed[key] = store.add_artifact(
+                            run_id,
+                            artifact_descriptor,
+                            artifact_id=_artifact_id(run_id, event.sequence, key),
+                        )
                     elif "file" in descriptor and "path" in descriptor["file"]:
                         artifact_descriptor = {
                             **descriptor["file"],
@@ -147,7 +157,11 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
                                 ),
                             },
                         }
-                        indexed[key] = store.add_artifact(run_id, artifact_descriptor)
+                        indexed[key] = store.add_artifact(
+                            run_id,
+                            artifact_descriptor,
+                            artifact_id=_artifact_id(run_id, event.sequence, key),
+                        )
                     elif "data" in descriptor:
                         data = base64.b64decode(descriptor["data"], validate=True)
                         extension = descriptor.get("mime_type", "application/octet-stream").split(
@@ -160,6 +174,7 @@ def create_app(storage: Storage | None = None, token: str | None = None) -> Fast
                             descriptor.get("mime_type", "application/octet-stream"),
                             descriptor.get("media_type", "media"),
                             {"caption": descriptor.get("caption")},
+                            artifact_id=_artifact_id(run_id, event.sequence, key),
                         )
                     else:
                         indexed[key] = descriptor
@@ -363,9 +378,7 @@ def main() -> None:
             create_app(token=args.token), host="127.0.0.1", port=args.port, log_level="warning"
         )
     finally:
-        current = daemon_file()
-        if current.exists():
-            current.unlink(missing_ok=True)
+        clear_daemon_info()
 
 
 if __name__ == "__main__":

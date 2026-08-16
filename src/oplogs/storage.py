@@ -435,7 +435,12 @@ class Storage:
                 manifest.update(state=state, updated_at=now, finished_at=now)
                 self._write_manifest(run_id, manifest)
 
-    def add_artifact(self, run_id: str, descriptor: dict[str, Any]) -> dict[str, Any]:
+    def add_artifact(
+        self,
+        run_id: str,
+        descriptor: dict[str, Any],
+        artifact_id: str | None = None,
+    ) -> dict[str, Any]:
         source = Path(descriptor["path"]).expanduser().resolve()
         if not source.is_file():
             raise FileNotFoundError(source)
@@ -450,7 +455,7 @@ class Storage:
             temporary = target.with_suffix(".tmp")
             shutil.copyfile(source, temporary)
             temporary.replace(target)
-        artifact_id = uuid.uuid4().hex
+        artifact_id = artifact_id or uuid.uuid4().hex
         now = utc_now()
         record = {
             "id": artifact_id,
@@ -467,7 +472,7 @@ class Storage:
         }
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                 (
                     artifact_id,
                     run_id,
@@ -492,6 +497,7 @@ class Storage:
         mime_type: str,
         artifact_type: str = "media",
         metadata: dict[str, Any] | None = None,
+        artifact_id: str | None = None,
     ) -> dict[str, Any]:
         hexdigest = hashlib.sha256(data).hexdigest()
         target = self.blobs_dir / hexdigest[:2] / hexdigest[2:]
@@ -500,7 +506,7 @@ class Storage:
             temporary = target.with_suffix(".tmp")
             temporary.write_bytes(data)
             temporary.replace(target)
-        artifact_id = uuid.uuid4().hex
+        artifact_id = artifact_id or uuid.uuid4().hex
         now = utc_now()
         record = {
             "id": artifact_id,
@@ -517,7 +523,7 @@ class Storage:
         }
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                 (
                     artifact_id,
                     run_id,
